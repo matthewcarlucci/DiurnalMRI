@@ -1,0 +1,88 @@
+### Scikick Project Workflow Configuration File
+
+# Directory where Scikick will store all standard notebook outputs
+reportdir: report
+
+# --- Content below here is best modified by using the Scikick CLI ---
+
+# Notebook Execution Configuration (format summarized below)
+# analysis:
+#  first_notebook.Rmd:
+#  second_notebook.Rmd:
+#  - first_notebook.Rmd         # must execute before second_notebook.Rmd
+#  - functions.R                # file is used by second_notebook.Rmd
+#
+# Each analysis item is executed to generate md and html files, E.g.:
+# 1. <reportdir>/out_md/first_notebook.md
+# 2. <reportdir>/out_html/first_notebook.html
+
+analysis: !!omap
+- code/methods/methods_walkthrough.Rmd:
+- code/methods/Gcosinor_implementation_check.Rmd: []
+- code/results/WB_S-cosinor.Rmd: []
+- code/results/WB_G-cosinor.Rmd:
+  - code/results/WB_S-cosinor.Rmd
+- code/results/WB_acrophase_agnostic_tests.Rmd:
+  - code/results/WB_S-cosinor.Rmd
+- code/results/ROI_S-cosinor.Rmd: []
+- code/results/ROI_G-cosinor.Rmd:
+  - code/results/ROI_S-cosinor.Rmd
+- code/results/ROI_acrophase_agnostic_tests.Rmd:
+  - code/results/ROI_S-cosinor.Rmd
+- code/results/body_weight.Rmd: []
+- code/results/WB_cosinor_stats_BPD.Rmd: []
+- code/results/ROI_cosinor_stats_BPD.Rmd: []
+- code/results/WB_BPD_diffs.Rmd:
+  - code/results/WB_cosinor_stats_BPD.Rmd
+  - code/results/WB_S-cosinor.Rmd
+- code/display_items/table_1.Rmd:
+  - code/display_items/figure_S5_actigraphy.Rmd
+  - code/results/body_weight.Rmd
+- code/display_items/table_2.Rmd:
+  - code/results/WB_G-cosinor.Rmd
+  - code/results/WB_acrophase_agnostic_tests.Rmd
+  - code/results/body_weight.Rmd
+  - code/results/ROI_G-cosinor.Rmd
+  - code/results/ROI_acrophase_agnostic_tests.Rmd
+- code/display_items/figure_2.Rmd:
+  - code/results/WB_G-cosinor.Rmd
+  - code/results/WB_acrophase_agnostic_tests.Rmd
+  - code/results/body_weight.Rmd
+- code/display_items/figure_3.Rmd:
+  - code/results/ROI_S-cosinor.Rmd
+  - code/results/ROI_G-cosinor.Rmd
+  - code/results/WB_G-cosinor.Rmd
+- code/display_items/figure_4.Rmd:
+  - code/results/WB_G-cosinor.Rmd
+  - code/results/WB_acrophase_agnostic_tests.Rmd
+  - code/results/WB_cosinor_stats_BPD.Rmd
+  - code/results/WB_BPD_diffs.Rmd
+  - code/results/ROI_cosinor_stats_BPD.Rmd
+  - code/results/ROI_G-cosinor.Rmd
+  - code/results/ROI_acrophase_agnostic_tests.Rmd
+- code/display_items/table_S1_techvar.Rmd:
+- code/display_items/table_S3_adjweight.Rmd: []
+- code/display_items/figure_S4_spatialG.Rmd:
+  - code/results/ROI_G-cosinor.Rmd
+- code/display_items/figure_S5_actigraphy.Rmd: []
+- code/display_items/figure_S6_phasePSQI.Rmd:
+  - code/results/WB_cosinor_stats_BPD.Rmd
+  - code/results/WB_S-cosinor.Rmd
+- code/index.Rmd:
+  - README.md
+snakefile_args:
+  singularity: /external/EPIGENETICS/SCRATCH/automator/share/singularity/shared3.img
+version_info:
+  snakemake: 6.3.0
+  ruamel.yaml: 0.16.5
+  scikick: 0.2.0
+# Optional site theme customization
+output:
+  BiocStyle::html_document:
+    code_folding: show
+    theme: readable
+    toc_float: true
+    toc: true
+    number_sections: false
+    toc_depth: 5
+    self_contained: true

@@ -1,0 +1,125 @@
+---
+title: "Regional cosinor statistics for BPD and combined"
+---
+
+```{r}
+source("code/setup.R")
+
+df <- 
+  read_csv("data/available_upon_request/processed_ROI_data.csv") |> 
+  mutate(dx = as.factor(dx))
+
+dir.create("output/ROI_cosinor_stats_BPD/",showWarnings = F)
+```
+
+# S-cosinor
+
+```{r}
+# By subject cosinor (S-cosinor)
+ROI_Scosinor <-
+  df |>
+  group_by(measure, subject, dx) |>
+  nest() |>
+  mutate(bsc = map(data, \(x){
+    se <- x |>
+      select(roi, ltime, value) |>
+      pivot_wider(names_from = ltime) |>
+      data.frame() |>
+      discoDFtoSE()
+    res <- discoODAs(se, method = "CS")$CS
+    return(data.frame(roi = rownames(res), res))
+  })) |>
+  select(-data)
+ROI_Scosinor
+write_rds(ROI_Scosinor, "output/ROI_cosinor_stats_BPD/ROI_S-cosinor_dx01.rds")
+```
+
+## Check for cumulative evidence 
+
+### using BPD-cntrl-combined
+
+```{r}
+tog <- ROI_Scosinor |>
+  unnest(bsc) |>
+  group_by(measure, roi) |>
+  summarize(
+    p = metap::sumlog(pvalue)$p,
+    chisq = metap::sumlog(pvalue)$chisq
+  ) |>
+  group_by(measure) |>
+  mutate(q = p.adjust(p, "fdr"))
+
+tog |>
+  rename(grp = measure, pvalue = p) |>
+  groupWiseSummaryPvalTable()
+
+write_rds(tog, "output/ROI_cosinor_stats_BPD/ROI_AA_dx01.rds")
+```
+
+### BPD-only
+
+```{r}
+sep <-
+  ROI_Scosinor |>
+  unnest(bsc) |>
+  group_by(measure, roi, dx) |>
+  summarize(
+    p = metap::sumlog(pvalue)$p,
+    chisq = metap::sumlog(pvalue)$chisq
+  ) |>
+  group_by(measure) |>
+  mutate(q = p.adjust(p, "fdr"))
+
+sep |>
+  filter(dx == 1) |>
+  mutate(grp = measure, pvalue = p) |>
+  groupWiseSummaryPvalTable()
+```
+
+Looking at controls for sanity check
+```{r}
+sep |>
+  filter(dx == 0) |>
+  mutate(grp = measure, pvalue = p) |>
+  groupWiseSummaryPvalTable()
+```
+
+Export BPD results
+
+```{r}
+write_rds(sep |> filter(dx == 1), "output/ROI_cosinor_stats_BPD/ROI_AA_dx1.rds")
+```
+
+# G-cosinor
+
+## Combined
+
+```{r}
+gcos <-
+  ROI_Scosinor |>
+  group_by(measure) |>
+  do(discoPMcos(.$bsc) |> rownames_to_column("roi")) |>
+  rsqGcos(df)
+
+gcos |>
+  rename(grp = measure) |>
+  groupWiseSummaryPvalTable()
+write_rds(gcos, "output/ROI_cosinor_stats_BPD/ROI_G-cosinor_dx01.rds")
+```
+
+## BPD-only
+
+```{r}
+gcos_dx1 <-
+  ROI_Scosinor |>
+  filter(dx == 1) |>
+  group_by(measure) |>
+  do(discoPMcos(.$bsc) |> rownames_to_column("roi")) |>
+  rsqGcos(df |> filter(dx == 1))
+
+gcos_dx1 |>
+  rename(grp = measure) |>
+  groupWiseSummaryPvalTable()
+
+write_rds(gcos_dx1, "output/ROI_cosinor_stats_BPD/ROI_G-cosinor_dx1.rds")
+```

@@ -1,0 +1,23 @@
+---
+title: "ROI-wise G-cosinor in Controls"
+---
+
+```{r}
+source("code/setup.R")
+df <- read_csv("data/available_upon_request/processed_ROI_data.csv") |> filter(dx == 0)
+ROI_Scosinor <- read_rds("output/ROI_S-cosinor.rds")
+```
+
+Computing G-cosinor results for each ROI. 
+
+```{r}
+ROI_Gcosinor <-
+  ROI_Scosinor |>
+  group_by(measure) |>
+  do(discoPMcos(.$bsc) |> rownames_to_column("roi")) |>
+  rsqGcos(df)
+ROI_Gcosinor
+
+# For R usage
+write_rds(ROI_Gcosinor, "output/ROI_G-cosinor.rds")
+```

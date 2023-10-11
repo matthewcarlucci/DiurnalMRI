@@ -1,0 +1,547 @@
+---
+title: "Figure 4"
+---
+
+```{r}
+source("code/setup.R")
+df <- read_csv("data/available_upon_request/whole_brain_data.csv")
+df <- df |> mutate(dx=as.factor(dx))
+
+roidf <- read_csv("data/available_upon_request/processed_ROI_data.csv") |> filter(dx==0)
+roidfdx1 <- read_csv("data/available_upon_request/processed_ROI_data.csv") |> filter(dx==1)
+ROI_Gcosinor <- read_rds("output/ROI_G-cosinor.rds")
+ROI_Gcosinor_dx1 <- read_rds("output/ROI_cosinor_stats_BPD/ROI_G-cosinor_dx1.rds")
+ROI_Gcosinor_dx01 <- read_rds("output/ROI_cosinor_stats_BPD/ROI_G-cosinor_dx01.rds")
+ROI_AA <- read_rds("output/ROI_AA.rds")
+ROI_AA_dx1 <- read_rds("output/ROI_cosinor_stats_BPD/ROI_AA_dx1.rds")
+ROI_AA_dx01 <- read_rds("output/ROI_cosinor_stats_BPD/ROI_AA_dx01.rds")
+# Merge all stats used throughout
+roi_sumtab <- Reduce(function(x, y, ...) merge(x, y, all = TRUE, ...),
+                     list(ROI_Gcosinor |> select(measure,roi,p_gc = pvalue),
+                          ROI_AA |> select(measure,roi,p_AA = p),
+                          ROI_Gcosinor_dx1 |> select(measure,roi,p_gc_bpd = pvalue),
+                          ROI_Gcosinor_dx01 |> select(measure,roi,p_gc_com = pvalue),
+                          ROI_AA_dx1 |> select(measure,roi,p_AA_bpd = p),
+                          ROI_AA_dx01 |> select(measure,roi,p_AA_com = p)))
+
+# Whole brain statistics
+WB_Gcosinor_dx0 <- read_rds("output/WB_G-cosinor.rds")
+WB_Gcosinor_dx1 <- read_rds("output/WB_cosinor_stats_BPD/WB_G-cosinor_dx1.rds")
+WB_Gcosinor_dx01 <- read_rds("output/WB_cosinor_stats_BPD/WB_G-cosinor_dx01.rds")
+WB_AA <- read_rds("output/WB_AA.rds")
+WB_AA_dx1 <- read_rds("output/WB_cosinor_stats_BPD/WB_AA_dx1.RDS")
+WB_AA_dx01 <- read_rds("output/WB_cosinor_stats_BPD/WB_AA_dx01.RDS")
+wb_sumtab <- list(
+	 WB_Gcosinor_dx0 |> 
+	 	select(measure,es=rsqdm,es2=rsq,pvalue) |> mutate(test="Gcos",grp="CTRL"),
+	 WB_Gcosinor_dx1 |> 
+	 	select(measure,es=rsqdm,es2=rsq,pvalue) |> mutate(test="Gcos",grp="BPD"),
+	 WB_Gcosinor_dx01 |> 
+	 	select(measure,es=rsqdm,es2=rsq,pvalue) |> mutate(test="Gcos",grp="Combined"),
+	 WB_AA |> 
+	 	select(measure,es=chisq,pvalue=p) |> mutate(test="Fishers",grp="CTRL",es2=NA),
+	 WB_AA_dx1 |> 
+	 	select(measure,es=chisq,pvalue=p) |> mutate(test="Fishers",grp="BPD",es2=NA),
+	 WB_AA_dx01 |> 
+	 	select(measure,es=chisq,pvalue=p) |> mutate(test="Fishers",grp="Combined",es2=NA)
+	 ) |> rbindlist(use.names = T) |> rename(p=pvalue)
+
+bsc <- rbind(read_rds("output/WB_S-cosinor.rds") |> 
+			 	mutate(dx=factor(0,levels=c(0,1))),
+	   read_rds("output/WB_cosinor_stats_BPD/WB_S-cosinor_dx1.rds"))
+WB_acrodiffvar <- read_rds("output/WB_BPD_diffs/WB_acrodiffvar_test.RDS")
+
+WB_Gcosinor  <- 
+  WB_Gcosinor_dx1 |>
+	select(amplitude,measure) |> 
+	inner_join(WB_Gcosinor_dx1) |> 
+	rename(acro_pcf = acrophase) |> 
+	rename(p_pct = pvalue)
+
+d2 <- 
+	bsc |> 
+	select(acro_sscf=acrophase,amp_sscf=amplitude,measure,p_ssct=pvalue,dx) |> 
+	mutate(measure=factor(measure,levels = fig1_modord)) |> 
+	arrange(measure)
+
+plotdf <- WB_Gcosinor |> inner_join(d2,by="measure") |> 
+	mutate(measure=factor(measure,levels = fig1_modord)) |> 
+	arrange(measure)
+```
+
+
+# Figure 4a: Polar {.tabset}
+
+```{r fig.height=5.5, fig.width=5}
+# Acrophase consistency
+dxres <- 
+	bsc |> 
+	group_by(measure,dx) |> 
+  summarize(cohort_resultant=acro2complex(acrophase) |> mean() |> abs(),
+            cm = circamean(acrophase)) |>
+  mutate(dxlab=dx2lab(dx)) |> 
+  rbind(bsc |> 
+	group_by(measure) |> 
+  summarize(cohort_resultant=acro2complex(acrophase) |> mean() |> abs(),
+            cm = circamean(acrophase),dxlab="Combined"))
+
+
+diffacrovar_ms <- WB_acrodiffvar$measure[WB_acrodiffvar$p<0.05]
+labmap <-
+	WB_Gcosinor_dx0 |> ungroup() |> 
+	arrange(match(measure,fig1_modord)) |>
+	mutate(label=factor(measure,ordered=T,levels=fig1_modord,
+						labels = paste0(int2extlab[measure],
+										ifelse(measure %in% diffacrovar_ms,
+											   "-Delta(abs(rho))-p<0.05","")
+										))) |>
+	select(measure,label) |> unique() 
+
+# (Partial) Source Data
+fig4aSD <- 
+  dxres |> 
+  ungroup() |> 
+  select(cohort_resultant,cm,dxlab,measure) |> 
+  inner_join(
+    rbind(
+      WB_Gcosinor_dx0 |> 
+        ungroup() |> 
+        filter(pvalue<0.05) |> 
+        select(measure,acrophase,acro_l,acro_u) |> 
+        mutate(dxlab="CNTRL"),
+      WB_Gcosinor_dx01 |> 
+        ungroup() |> 
+        filter(pvalue<0.05) |> 
+        select(measure,acrophase,acro_l,acro_u) |> 
+        mutate(dxlab="Combined"),
+      WB_Gcosinor_dx1 |> 
+        ungroup() |> 
+        filter(pvalue<0.05) |> 
+        select(measure,acrophase,acro_l,acro_u) |> 
+        mutate(dxlab="BPD"))
+  ) |> 
+  mutate(measure=int2extlab[measure])
+write_csv(fig4aSD,"output/source_data/Figure_4a_partial.csv")
+
+Gcos_3grp_acrotick_p <- 
+	plotdf |>
+	inner_join(labmap) |> 
+	ggplot(aes(acro_sscf,1-p_ssct))+
+	ylab(expression(abs(rho)))+
+	night_rect_early()+
+	geom_rect(xmin=0,xmax=24,ymin=0,ymax=1,alpha=0.1,color=NA,fill="whitesmoke")+
+	geom_rect(xmin=0,xmax=24,ymin=-Inf,ymax=0,fill="white")+
+	geom_hline(yintercept = 1,color="black",size=0.2)+
+	geom_hline(yintercept = 0.5,color="black",size=0.2,linetype=3)+
+  annotate(geom="segment",x=seq(0,24,3),y=2.2,yend=0,xend=seq(0,24,3),
+             color="grey90",size=0.3)+
+	geom_text(aes(color=dx2lab(dx),y=1,
+				  angle=-acro_sscf/24*360-90),
+			  size=5,label="-")+
+	# G-cosinor dx1
+	geom_point(data = plotdf |> filter(p_pct<0.05) |> inner_join(labmap),
+			   aes(acro_pcf,y=1.6,color=ifelse(p_pct<0.05,"BPD",NA)),size=1.2)+
+	geom_errorbar(data = plotdf |> filter(p_pct<0.05) |> inner_join(labmap),
+				  aes(xmin=acro_u, xmax=acro_l,y=1.6,
+				  	color=ifelse(p_pct<0.05,"BPD",NA)),width=0.25)+
+	# G-cosinor dx0
+	geom_point(data = WB_Gcosinor_dx0 |> filter(pvalue<0.05) |> inner_join(labmap),
+			   aes(acrophase,y=1.3,color=ifelse(pvalue<0.05,"CNTRL",NA)),size=1.2)+
+	geom_errorbar(data = WB_Gcosinor_dx0 |> filter(pvalue<0.05) |> inner_join(labmap),
+				  aes(xmin=acro_u,x=acrophase, 
+				  	xmax=acro_l,y=1.3, color=ifelse(pvalue<0.05,"CNTRL",NA)),width=0.25)+
+	# G-cosinor dx0dx1
+	geom_point(data = WB_Gcosinor_dx01 |> filter(pvalue<0.05) |> inner_join(labmap),
+			   aes(acrophase,y=1.9,color=ifelse(pvalue<0.05,"Combined",NA)),size=1.2)+
+	geom_errorbar(data = WB_Gcosinor_dx01 |> filter(pvalue<0.05) |> inner_join(labmap),
+				  aes(xmin=acro_u,x=acrophase, 
+				  	xmax=acro_l,y=1.9, color=ifelse(pvalue<0.05,"Combined",NA)),width=0.25)+
+	geom_segment(data=dxres |> inner_join(labmap),
+				 aes(xend=cm,x=cm,y=0,yend=cohort_resultant,color=dxlab),
+				 	size=0.5,alpha=0.8,
+				 arrow = arrow(type = "closed",length = unit(0.8,"mm")))+
+	scale_color_manual(values=c("BPD"=colors$dx1,
+								"CNTRL"=colors$dx0,
+								"Combined"=colors$dx01),guide='none')+
+	facet_wrap(label~.,nrow=3,labeller = label_parsed)+
+	theme(panel.border = element_blank(), 
+		  panel.background = element_blank(), 
+		  panel.grid = element_blank(),
+		  panel.spacing.x = unit(0,"line")) +
+	coord_polar()+
+	theme(panel.grid = element_blank())+
+	theme(panel.spacing = unit(0, "lines"))+
+	scale_y_continuous(breaks = c(0,1),limits = c(-0,2.2))+
+  scale_x_continuous(limits = c(0,24), breaks=seq(0,24,6))+
+  xlab("Acrophase (hr)")+
+  theme_condense()+	theme(panel.border = element_blank(), 
+                          panel.background = element_blank(),
+                          #Legend
+                          legend.title.align = 0,
+                          legend.position = "right",
+                          legend.title = element_text(size=8, vjust = 0, hjust = -3),
+                          panel.spacing.x = unit(0.5,"line")
+  )
+Gcos_3grp_acrotick_p 
+```
+
+# Spatial summary
+
+## Additional ROIs for combined Gcos
+
+Extract stats referenced in text for "new" ROIs identified by combined ("FALSE TRUE").
+
+G-cosinor
+
+```{r}
+roi_sumtab |> 
+  group_by(measure) |> 
+  mutate(class=paste(p.adjust(p_gc,"fdr")<0.05,p.adjust(p_gc_com,"fdr")<0.05)) |> 
+  group_by(measure,class) |> count() |> 
+  filter(class=="FALSE TRUE")
+```
+
+AA
+
+```{r}
+roi_sumtab |> 
+  group_by(measure) |> 
+  mutate(class=paste(p.adjust(p_AA,"fdr")<0.05,
+                     p.adjust(p_AA_com,"fdr")<0.05)) |> 
+  group_by(measure,class) |> count() |> 
+  filter(class=="FALSE TRUE")
+```
+
+Or the simple difference in #ROIs
+
+```{r}
+roi_sumtab |> 
+  group_by(measure) |> 
+  summarize(n_gc=sum(p.adjust(p_gc,"fdr")<0.05),
+            n_gc_com=sum(p.adjust(p_gc_com,"fdr")<0.05),
+            n_AA=sum(p.adjust(p_AA,"fdr")<0.05),
+            n_AA_com=sum(p.adjust(p_AA_com,"fdr")<0.05)) |> 
+  mutate(diff_gc=n_gc_com-n_gc,
+         diff_AA=n_AA_com-n_AA)
+```
+
+
+## All 
+```{r}
+library(ggseg)
+library(ggsegGlasser)
+meta <- get_glasser_spatial_meta()
+predat <- roi_sumtab |> 
+	pivot_longer(c(p_gc,p_AA,p_AA_bpd,
+				  p_AA_com,p_gc_bpd,p_gc_com)) |> 
+	group_by(name,measure) |> 
+	mutate(q=p.adjust(value,"fdr")) |> 
+	mutate(name=factor(c("p_gc"="CNTRL Gcos",
+				  "p_AA"="CNTRL Fishers",
+				  "p_gc_bpd"="BPD Gcos",
+				  "p_AA_bpd"="BPD Fishers",
+				  "p_AA_com"="Combined Fishers",
+				  "p_gc_com"="Combined Gcos")[name],
+				  levels=c("CNTRL Gcos","CNTRL Fishers",
+				  		 "BPD Fishers","BPD Gcos",
+				  		 "Combined Fishers","Combined Gcos"),
+				  labels = c("CNTRL Gcos (n=16)","CNTRL Fishers (n=16)",
+				  		 "BPD Fishers (n=8)","BPD Gcos (n=8)",
+				  		 "Combined Fishers (n=24)","Combined Gcos (n=24)"))) |> 
+	group_by(measure,name) |> 
+	mutate(n=sum(q<0.05),ntot=n()) |> 
+	filter(n>0) |>
+	mutate(value=ifelse(q<0.05,value,NA))
+
+# Don't forget about these
+predat |> 
+	select(n,ntot,name,measure) |> 
+	unique() |> 
+	filter(measure %in% c("wm_qt1","fa","md"))
+```
+
+
+## Regional Highlights
+
+### Combined GM-MD
+
+```{r}
+library(ggsegGlasser)
+library(ggseg)
+meta <- get_glasser_spatial_meta()
+meta_glass <- get_glasser_spatial_meta()
+
+fig4bSD <- 
+  ROI_Gcosinor_dx01 |> 
+	filter(measure =="gm_md") |> 
+	mutate(acrophase=ifelse(qvalue<0.05,acrophase,NA)) |> 
+  select(measure,roi,qvalue,acrophase)
+write_csv(fig4bSD |> mutate(measure=int2extlab[measure]),
+          "output/source_data/Figure_4b_part1.csv")
+
+gmmdcombgc <- 
+  inner_join(fig4bSD,meta) |>
+	ggplot(aes(fill=acrophase))+
+	facet_wrap(~int2extlab[measure],nrow=5)+
+	theme_condense()+
+	scale_fill_clock(rot=15,na.value="grey95")+
+	geom_brain(atlas = glasser,
+			   position=position_brain(side ~ hemi),
+			   color="grey",size=0.1)+
+	theme_void()
+gmmdcombgc
+```
+
+### WM-FA
+
+```{r}
+# WM-FA Gcos comb
+library(ggsegICBM)
+library(plotly)
+library(ggseg3d)
+meta <- get_icbm_spatial_meta()
+
+# Source Data
+fig4bSD2 <- 
+  ROI_Gcosinor_dx01 |> 
+  filter(measure=="fa") |> 
+  mutate(acrophase=ifelse(qvalue<0.05,acrophase,NA)) |> 
+  select(measure,roi,qvalue,acrophase)
+write_csv(fig4bSD2 |> mutate(measure=int2extlab[measure]),
+          "output/source_data/Figure_4b_part2.csv")
+
+pdf2 <- inner_join(fig4bSD2,meta) |> icbm_preprocess()
+pdf2$region %in% icbm_3d$ggseg_3d[[1]]$region
+
+rot=15
+pal <- 1:24
+names(pal) <- rainbow(24)[((1:24)-1+rot)%%24+1]
+
+p3d <- pdf2 |> 	
+	select(region,acrophase,roi) |> 
+	ggseg3d(atlas = icbm_3d,colour="acrophase",
+			palette = pal,na.alpha = 0.01) |> 
+	add_glassbrain(opacity=0.05) |>
+	pan_camera("right lateral") |>
+	remove_axes()
+p3d
+```
+
+### GM-qT1 (AA)
+
+```{r}
+ROI_Scosinor <- read_rds("output/ROI_cosinor_stats_BPD/ROI_S-cosinor_dx01.rds") |> unnest(bsc)
+sigrois <- ROI_AA_dx01 |> 
+  filter(measure=="qt1") |> 
+  filter(q<0.05) |> 
+  pull(roi)
+
+# Source Data
+fig4cSD <-
+  ROI_Scosinor |>   
+  filter(measure=="qt1") |> 
+  group_by(measure,roi) |>
+  summarize(var=1-acrophase |> acro2complex() |> mean() |> abs()) |> 
+  mutate(var=ifelse((roi %in% (sigrois)),var,NA))
+  # filter(roi %in% (sigrois))  
+write_csv(fig4cSD |> mutate(measure=int2extlab[measure]),
+          "output/source_data/Figure_4c.csv")
+
+gmqt1combaa <-
+  fig4cSD |> 
+  inner_join(meta_glass) |>  
+  ggplot(aes(fill=var))+
+  facet_grid(measure~.)+
+  theme_condense()+
+  scale_fill_gradientn(colours = c("blue","#C26179"),
+                       na.value="grey95",limits=c(0,1))+
+  guides(colour = guide_coloursteps(show.limits = TRUE))+
+  labs(fill="Acrophase Variance")+
+  geom_brain(atlas = glasser,
+             position=position_brain(side ~ hemi),color="grey50",size=0.05)+
+  theme_void()+
+  geom_text(aes(x=320,y=220,
+                label=paste0(length(sigrois),"/",nrow(ROI_AA_dx01 |> filter(measure=="qt1")))),size=3)+
+  theme(panel.background = element_rect(color="grey80",size=0.1))+
+  theme(panel.spacing.x = unit(0, "lines"))+
+  theme(panel.spacing.y = unit(0, "lines"))
+gmqt1combaa
+```
+
+### Subcortical
+
+#### GM-MD
+```{r}
+myaseg <- get_subcor_ggseg_atlas()
+# Used to remove
+meta <- get_glasser_spatial_meta()
+
+# gmmdcombgc <- 
+fig4bSD |> 
+  full_join(meta) |> 
+	filter(measure =="gm_md") |>  
+  mutate(acrophase=ifelse(qvalue<0.05,acrophase,NA)) |> 
+  filter(is.na(`z-cog`)) |>  # To remove non-subcortical 
+  rename(label=roi) |> #pull(label)
+  filter(qvalue<0.05) |> #dim
+  select(label,qvalue,acrophase) |> 
+  ggplot(aes(fill=acrophase))+
+  theme_condense()+
+  geom_brain(atlas = myaseg)+
+	scale_fill_clock(rot=15,na.value="grey95")+
+	facet_wrap(~int2extlab[measure],nrow=5)+
+	theme_condense()+
+  theme_void()
+```
+
+#### GM-qT1
+
+```{r}
+meta <- get_glasser_spatial_meta()
+
+# GM-qT1
+fig4cSD |> 
+  full_join(meta) |> 
+  filter(is.na(`z-cog`)) |>  # To remove non-subcortical
+  rename(label=roi) |> 
+  select(label,var) |> 
+  ggplot(aes(fill=var))+
+  theme_condense()+
+  scale_fill_gradientn(colours = c("blue","#C26179"),
+                       na.value="grey95",limits=c(0,1))+
+  geom_brain(atlas = myaseg)+
+  theme_void()
+```
+
+# Scaled Curves
+
+```{r fig.height=2.6,fig.width=3.6}
+tmp <- bsc |> filter(measure=="cbf")
+acros <- seq(8,33,length.out=100)[-1]
+
+ddf <- 
+bsc |> 
+	filter(measure=="cbf" | measure=="gm_md") |> 
+  group_by(dx,measure) |> 
+  nest() |> 
+  mutate(ddf=map(data,function(tmp){
+    par <- circular::mle.vonmises(circular::circular(tmp$acrophase/24*2*pi))
+    data.frame(acros,
+             dens=circular::dvonmises(circular::circular(acros/24*2*pi),
+                            circamean(tmp$acrophase)/24*2*pi,
+                            par$kappa))
+})) |> select(-data) |> unnest(ddf) |> 
+  mutate(dens=ifelse(measure=="cbf",dens*20/2+20,dens*0.0015/2+0.0015))
+
+curv_and_dist_p2_comb <- 
+	ggplot()+
+	night_rect()+
+  geom_line(data=bsc |>
+              filter(measure=="cbf" | measure=="gm_md") |> 
+              mutate(value=map2(amplitude,acrophase,cosinor_pred,time=9:33),
+                     ltime=list(9:33)) |>
+              unnest(c(value,ltime)),
+            aes(ltime,value,group=subject,color=dx2lab(dx)),size=0.4,alpha=0.4)+
+  geom_line(data=WB_Gcosinor_dx0 |> mutate(dx=0) |> 
+              rbind(WB_Gcosinor_dx1 |> mutate(dx=1)) |> 
+              filter(measure=="cbf" | measure=="gm_md") |> 
+              mutate(value=map2(amplitude,acrophase,cosinor_pred,time=9:33),
+                     ltime=list(9:33)) |>
+              unnest(c(value,ltime)),
+            aes(ltime,value,color=dx2lab(dx)),size=1.5)+
+  # Densities
+  geom_ribbon(data=ddf,
+              aes(acros,y=1,ymax=dens,group=NA,
+			      ymin=ifelse(measure=="cbf",20,0.0015)),
+			  alpha=0.6)+
+	geom_point(data=bsc |> 
+	             filter(measure=="cbf" | measure=="gm_md"),
+			  aes(ifelse(acrophase<8,acrophase+24,acrophase),group=NA,color=dx2lab(dx),
+			   y=ifelse(measure=="cbf",20,0.0015)*1.1),
+			  shape="l",size=4,alpha=0.7)+
+  facet_grid(int2extlab[measure]~dx2lab(dx),scales="free",labeller = label_parsed)+
+	scale_color_manual(values=c("BPD"=colors$dx1,
+								"CNTRL"=colors$dx0,
+								"Combined"=colors$dx01),guide='none')+
+  scale_x_continuous(breaks = seq(8,32,4),labels = seq(8,32,4%%24))+
+	ylab("Cosinor predicted values")+
+	xlab("Time of Day (hr)")+
+	theme_condense()
+curv_and_dist_p2_comb 
+```
+
+# Figure 4e TOD effects
+
+```{r fig.width=2.25, fig.height=2.6}
+allres <- 
+	df |> 
+  filter(measure=="cbf" | measure=="gm_md") |> 
+	group_by(measure) |> nest() |> 
+	mutate(res=map(data,function(x){
+	  lapply(1:9,function(ss1){
+	    ss2=ss1
+	    tdf <- x |> filter((session==ss1 & dx==0) | (session==ss2 & dx==1))
+	    res <- t.test(tdf$value[tdf$dx==1],tdf$value[tdf$dx==0])
+	    res |> glance() |> mutate(ss1,ss2)
+	  }) |> rbindlist()	
+	})) |> unnest(res) 
+
+# Source Data
+fig4eSD <- 
+  allres |> 
+  select(session=ss1,estimate,measure) |> 
+  mutate(tod=(session-1)*3+9) |> 
+  mutate(measure=int2extlab[measure])
+write_csv(fig4eSD,"output/source_data/Figure_4e.csv")
+
+TODestimate_p_comb <- 
+  fig4eSD |> 
+  ggplot(aes(tod,estimate))+
+  geom_col()+
+  stat_smooth_cosinor(size=2,fullrange=TRUE)+
+  xlab("Time of Day [hr] \n(session #)")+
+  ylab("BPD - CNTRL")+
+  # Linear order but ToD labels
+  scale_x_continuous(breaks=seq(9,36,3),
+                     labels = paste0(seq(9,36,3)%%24,"\n(",seq(1,9),")"))+
+  facet_grid(measure~.,scales="free")+
+	geom_hline(yintercept = 0)+
+  theme_condense()
+TODestimate_p_comb
+```
+
+# Final Figure 4 {#figure-4 .tabset .active}
+
+```{r fig.height=8, fig.width=8}
+Gcos_3grp_acrotick_p+labs(color="Group")+theme_condense_legend()+
+  #
+  gmmdcombgc+theme(legend.position="none")+	
+  theme(strip.text = element_text(size=6,color="black",
+                                  margin = margin( b = 0, t = 0)))+
+  gmqt1combaa+
+  guides(fill = guide_colorbar(override.aes = list(size = 0.3)))+
+  theme(legend.title = element_text(size = 6), 
+        legend.text = element_text(size = 6),
+        legend.key.size = unit(0.3, 'cm'))+
+  theme(strip.text = element_text(size=6,color="black",
+                                  margin = margin( b = 0, t = 0)))+
+  #
+  curv_and_dist_p2_comb+theme(legend.position="none")+
+  #
+  TODestimate_p_comb+
+  #
+  guide_area()+
+  #-patchwork
+  plot_layout(design = "
+		            AAAAABBB
+		            AAAAABBB
+		            AAAAABBB
+		            AAAAACCC
+		            AAAAACCC
+		            AAAAACCC
+		            DDDE#FFF
+		            DDDEGGGG")+
+  plot_annotation(tag_levels = 'a')+
+  plot_layout(guides = 'collect')
+```
+

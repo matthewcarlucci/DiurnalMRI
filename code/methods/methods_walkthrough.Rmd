@@ -1,0 +1,242 @@
+---
+title: "DiurnalMRI Methods Walkthrough"
+output: pdf_document
+date: "`r Sys.Date()`"
+bibliography: '`r here::here("references.bib")`'
+---
+
+# Overview
+
+The following page includes the full "data analysis and statistical methods" text with inline examples of code which executes an example of each method/statistic. We start by loading the functions into R:
+
+```{r}
+# Set the environment with relevant packages and load custom functions
+source("code/setup.R")
+```
+
+# Subject-level oscillations (S-cosinor)
+
+From methods:
+
+> For each subject, cosinor linear regression was fitted with a 24-hr period to detect diurnal oscillations [@Cornelissen2014-zw]. The data were modeled by linear cosine and sine transformations of MRI acquisition time (t) to arrive at a model for MESOR, amplitude, and acrophase, starting with the following formula:
+
+$$
+y = \beta_0 + \beta_1 \cos(\frac{2{\pi}t}{\tau}) +  \beta_2 \sin(\frac{2{\pi}t}{\tau}) + error
+$$
+
+> where t is MRI acquisition time, $\tau$ is the period (24-hr). The intercept coefficient ($\beta_0$) is the MESOR. $\beta_1$ and $\beta_2$ are regression coefficients that were used to calculate the amplitude (A) and acrophase as:
+
+$$
+A = \sqrt{\beta_1^2 + \beta_2^2}
+acrophase = atan2(\beta_1, \beta_2) \frac{\tau}{2\pi}
+$$
+
+> Such that $y = \beta0 + A \cos((t - acrophase)2\pi/\tau)$ + error. Each subject's p-values for the significance of diurnal oscillations were determined by the F-test comparing the cosinor model to an intercept-only (null) model and were used for the acrophase-agnostic test (described below). R2 of these within-subject models were obtained for each subject and used for the CBF differential oscillation strength test.
+
+We use R package `DiscoRhythm`[@Carlucci2019] to obtain these cosinor statistics with `discoODAs`. Below is a minimal example of cosinor analysis on a simulated nine time-point dataset from a single subject.
+
+```{r}
+# starting at 8am for 24hrs
+t = seq(8,32,3)
+# setting parameters
+b0=1 
+acrophase=18 
+A=1
+# Observations
+set.seed(1) # reproducibility
+y = b0 + A*cos((t-acrophase)*2*pi/24) + rnorm(length(t))
+
+# Here we format into SummarizedExperiment form, despite testing only a single feature 
+# (i.e. subject/region/metric) as it will come in useful later for multi-feature 
+# testing
+suppressPackageStartupMessages(library(DiscoRhythm))
+suppressPackageStartupMessages(library(SummarizedExperiment))
+x <- matrix(y,nrow=1) 
+se <- SummarizedExperiment(assay = x,
+                           colData = DataFrame(Time=t)) 
+# Applying cosinor
+discoODAs(se,method="CS")$CS
+```
+
+# Group-level oscillations (G-cosinor)
+
+From methods:
+
+> The population-mean cosinor [@Cornelissen2014-zw] approach was applied with the aim to make inferences regarding a populational average rhythm for each group, and is referred to as G-cosinor throughout the text. This is a two stage model where first stage estimates were obtained by fitting each subjects' data to the S-cosinor model described above. Next, across subjects, the coefficients were averaged to obtain: $\beta_0^\star$ (MESOR), $\beta_1^\star$ and $\beta_2^\star$, and the following group-level model:
+
+$$
+\hat{y}  = \hat{\beta}_0^\star + \hat{A}^\star cos(t - \hat{acrophase}^\star)
+$$
+
+> Where "\*" indicates a population mean estimate, and A\* and acrophase\* were derived from $\beta_1^\star$ and $\beta_2^\star$. In this procedure, S-cosinor [ $\beta_1$ , $\beta_2$ ] values were considered jointly. A single hypothesis test was performed with the null that the true population mean values are zero (i.e., [$\beta_1$ ,$\beta_2^\star$] = [0, 0]) or equivalently, that A=0. The p-value was obtained by the corresponding multivariate F-test [@Cornelissen2014-zw] and is referred to as G-cosinor p-value throughout the text. In the regional analyses, for each metric, correction for multiple comparisons was performed using the Benjamini-Hochberg false discovery rate (FDR) [@Benjamini1995-ms]. 95% confidence intervals for A\*, acrophase\*, and $\beta_0^\star$ were estimated by population-mean cosinor methods [@Bingham1982-dc] deriving from the multivariate F-test.
+
+These methods are implemented within the `discoPMcos()` function implemented for this study. We tested for equivalence of results with those of prior implementations of this method (R package cosinor2; test documented in "Gcosinor_Implementation_Check.Rmd"), and `discoPMcos()` improves upon performance with vectorization (useful for performing many such tests). Source code shown below:
+
+```{r}
+discoPMcos
+```
+
+Below is an example of a single test performed on data obtained by repeating the simulation above for multiple subjects. The S-cosinor methods are applied to the 16 simulated subjects to obtain 16 S-cosinor results.
+
+```{r}
+# Repeating the above simulation to simulate multiple subjects
+set.seed(1) # reproducibility
+x <- do.call(rbind,lapply(1:16,\(i){
+  t = seq(8,32,3)
+  b0=1 
+  acrophase=18 
+  A=1
+  y = b0 + A*cos((t-acrophase)*2*pi/24) + rnorm(length(t))
+  x=data.frame(matrix(y,nrow=1))
+  df <- data.frame(subject=i,x)
+  colnames(df)[-1] <- t
+  df
+}))
+
+se <- SummarizedExperiment(assay = as.matrix(x[,-1]),
+                           colData = DataFrame(Time=t)) 
+by_subject <- data.frame(subject = x[,1], discoODAs(se,method="CS")$CS)
+by_subject
+```
+
+`discoPMcos` accepts these results as input to test for a significant group-level rhythm across subjects, returning all statistics described in the above methods section.
+
+```{r}
+pmr <- discoPMcos(by_subject)
+pmr
+```
+
+## Variance explained
+
+> Variance explained. A proportion of variance explained was calculated as R2UN=1-SSR/TSS where the G-cosinor model was used to obtain:
+
+$$
+SSR = (y-\hat{y})^2 
+$$
+
+$$
+TSS = (y-\beta^\star_0)^2
+$$
+
+> R2DM was calculated identically to R2UN except y was first mean subtracted within each individual's data, effectively setting each subject's $\beta_0$ to zero and controlling for interindividual variation in $\beta_0$. Therefore $\beta_0^\star$ of the G-cosinor models was also set to zero and we proceeded to calculate R2DM. One oscillating ROI in the GM-MD combined analysis had a low magnitude negative R2UN estimate which was set to zero for clarity.
+
+An additional custom `rsqGcos()` function joins the original data, and the G-cosinor results to obtain these statistics. Source code shown below:
+
+```{r}
+rsqGcos
+```
+
+Where `cosinor_pred` returns model predictions of the population-mean. Source code shown below:
+
+```{r}
+cosinor_pred
+```
+
+Formatting the data and the `discoPMcos` results for joining within `rsqGcos` (by roi and measure), returns the two statistics:
+
+```{r}
+# Converting matrix to long data.frame
+orig_dat_as_df <- data.frame(subject= rep(1:16,9),
+             value=unlist(x[,2:ncol(x)]),
+             time=rep(t,each=16),
+             roi="whole-brain",
+             measure="simulation")
+
+# Add columns to join by
+pmr$measure="simulation"
+pmr$roi="whole-brain"
+
+rsqGcos(pmr,orig_dat_as_df) 
+```
+
+## Differential acrophase
+
+> Differential acrophase. When BPD and control groups each had significant G-cosinor oscillations, a difference in their acrophases was tested with permutation testing. Acrophase\* was obtained for both BPD (acrophase\*BPD) and control (acrophase\*CONTROL) groups. The minimum difference between them (minimum circular arc length) was then calculated.
+
+The short custom function `circdist()` finds the acrophase difference. Source code shown below:
+
+```{r}
+circdist
+```
+
+For example, the difference between a 24-hr acrophase of 1 and 23 is 2 (crossing over the zero line):
+
+```{r}
+circdist(1,23)
+```
+
+> A permuted null distribution was generated by obtaining the same acrophase difference 10,000 times after shuffling BPD/control labels among subjects and recalculating group-wise acrophase\* estimates. The two-sided permutation p-value was the proportion of instances where an absolute acrophase difference from a permuted trial was larger than the real difference.
+
+This permutation analysis was implemented in the WB_BPD_diffs.Rmd notebook.
+
+# Acrophase-agnostic test for asynchronous subject-level diurnal oscillations.
+
+> We implemented a method to complement the G-cosinor test to better utilize the variance explained by each individual within-subject S-cosinor fit. The S-cosinor F-test provided significance for each subject's fitted cosinor curve. As such, individual tests were not influenced by the amplitude/acrophase of other subjects, and were evaluated only by the degree to which they explained the within-subject data. We considered the global null hypothesis that no subjects showed oscillations. Under this null, p-values should follow a uniform distribution, and Fisher's combined probability test [@Fisher1925-zx] considers a likely distribution of p-values (as they would be if the global null were true) with the statistic:
+
+$$
+\chi^2_{2k} \sim -2 \sum_{i=1}^k \log(p_i) 
+$$
+
+> Where it follows a $\chi^2$ distribution with 2k (k=number of subjects) degrees of freedom. The test is conditional on the independence of subjects and is unweighted with respect to within-subject sample size.
+
+With the same S-cosinor results:
+
+```{r}
+by_subject
+```
+
+We apply fishers method using the `metap` package [@Dewey2022] `sumlog` to each biological feature, across subjects.
+
+```{r}
+metap::sumlog
+```
+
+```{r}
+metap::sumlog(by_subject$pvalue)
+```
+
+# Differential acrophase variance
+
+> Acrophase variance Utilizing standard circular statistics [@Rao_Jammalamadaka2001-dg], with a list of acrophases ($\theta$) in radians), an estimate of their mean and variance was obtained by representing each of them as a point, u(C,S), on the unit circle as:
+
+$$
+u(C,S) = (\cos(\theta),\sin(\theta)) 
+$$
+
+> The mean (centroid) u of these points was obtained as:
+
+$$
+\bar{u}(\bar{C},\bar{S}) = (\frac{1}{k} \sum_{i=1}^k \cos(\theta_i),\frac{1}{k} \sum_{i=1}^k \sin(\theta_i))
+$$
+
+> Then, the length of u is a measure of acrophase consistency:
+
+$$
+\bar{R} = \sqrt{\bar{C}^2 + \bar{S}^2}
+$$
+
+> where 1 indicates all acrophases were identical, and conversely, circular variance is 1-R and is bounded from 0-1. The mean acrophase was obtained from the direction of u as =atan2(C,S).
+
+In R, we utilized complex number notation to calculate all related directional statistics:
+
+```{r}
+acrophase_variance = 1 - (acro2complex(c(12,13,14)) |> mean() |> abs())
+```
+
+Where `acro2complex` is a simple custom function to convert acrophase into complex form. Source code shown below:
+
+```{r}
+acro2complex
+```
+
+For example, random uniform acrophases produce an estimated acrophase variance near one.
+
+```{r}
+1 - (acro2complex(runif(100)*24) |> mean() |> abs())
+```
+
+> Differential acrophase variance. Acrophase variance for both BPD (1-RBPD) and control (1-RCONTROL) groups were calculated as above. The difference between them (BPD - controls) was calculated. A permuted null distribution was generated by obtaining the same acrophase variance difference 10,000 times after shuffling BPD and control labels among subjects and recalculating group-wise acrophase variance estimates. The one-sided permuted p-value was the proportion of instances where the permuted acrophase variance difference was greater than the real difference.
+
+This permutation analysis was implemented in the WB_BPD_diffs.Rmd notebook.
+
+# References and page metadata

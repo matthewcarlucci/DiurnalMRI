@@ -1,0 +1,90 @@
+---
+title: "Whole-brain cosinor for BPD cohort and combined analysis"
+---
+
+```{r}
+source("code/setup.R")
+library(circular)
+library(cosinor2)
+df <- read_csv("data/available_upon_request/whole_brain_data.csv")
+df <- df |> mutate(dx = as.factor(dx))
+
+# dir since multioutput page
+dir.create("output/WB_cosinor_stats_BPD",showWarnings = F)
+```
+
+# S-cosinor
+
+```{r}
+WB_Scosinor <-
+  df |>
+  group_by(measure, subject, dx) |>
+  do(discoCosinor(matrix(.$value, nrow = 1), .$ltime))
+summary(WB_Scosinor)
+write_rds(WB_Scosinor |> filter(dx == 1), "output/WB_cosinor_stats_BPD/WB_S-cosinor_dx1.rds")
+```
+
+# Acrophase-agnostic test
+
+## Combined
+
+```{r}
+WB_AA_dx01 <-
+  WB_Scosinor |>
+  group_by(measure) |>
+  summarize(
+    pv = metap::sumlog(pvalue)$p,
+    chisq = metap::sumlog(pvalue)$chisq
+  ) |>
+  rename(p = pv)
+WB_AA_dx01
+
+saveRDS(WB_AA_dx01, "output/WB_cosinor_stats_BPD/WB_AA_dx01.rds")
+```
+
+## BPD
+
+```{r}
+WB_AA_dx1 <-
+  WB_Scosinor |>
+  filter(dx == 1) |>
+  group_by(measure, dx) |>
+  summarize(
+    pv = metap::sumlog(pvalue)$p,
+    chisq = metap::sumlog(pvalue)$chisq
+  ) |>
+  rename(p = pv) |>
+  arrange(dx, measure)
+WB_AA_dx1
+
+saveRDS(WB_AA_dx1, "output/WB_cosinor_stats_BPD/WB_AA_dx1.rds")
+```
+
+# G-cosinor
+
+## Combined
+
+```{r}
+WB_Gcosinor_dx01 <-
+  WB_Scosinor |>
+  group_by(measure) |>
+  do(discoPMcos(.)) |>
+  rsqGcos(df |> mutate(roi = "WB"))
+WB_Gcosinor_dx01 |> select(measure, F, df2, acrophase, pvalue, amplitude, rsq, rsqdm)
+
+write_rds(WB_Gcosinor_dx01, "output/WB_cosinor_stats_BPD/WB_G-cosinor_dx01.rds")
+```
+
+## BPD
+
+```{r}
+WB_Gcosinor_dx1 <- 
+  WB_Scosinor |>
+  filter(dx == 1) |>
+  group_by(measure) |>
+  do(discoPMcos(.)) |>
+  rsqGcos(df |> filter(dx == 1) |> mutate(roi = "WB"))
+WB_Gcosinor_dx1 |> select(measure, F, df2, acrophase, pvalue, amplitude, rsq, rsqdm)
+
+write_rds(WB_Gcosinor_dx1, "output/WB_cosinor_stats_BPD/WB_G-cosinor_dx1.rds")
+```

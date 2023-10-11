@@ -1,0 +1,249 @@
+---
+title: "Table 2"
+---
+
+
+```{r}
+source("code/setup.R")
+WB_Gcosinor <- read_rds("output/WB_G-cosinor.rds")
+WB_Gcosinor_dx1 <- read_rds("output/WB_cosinor_stats_BPD/WB_G-cosinor_dx1.rds")
+WB_Gcosinor_dx01 <- read_rds("output/WB_cosinor_stats_BPD/WB_G-cosinor_dx01.rds")
+weight_Gcosinor <- read_rds("output/body_weight/weight_G-cosinor_dx0.rds")
+weight_Gcosinor_dx01 <- read_rds("output/body_weight/weight_G-cosinor_dx01.rds")
+weight_Gcosinor_dx1 <- read_rds("output/body_weight/weight_G-cosinor_dx1.rds")
+ROI_Gcosinor <- read_rds("output/ROI_G-cosinor.rds")
+ROI_Gcosinor_dx1 <- read_rds("output/ROI_cosinor_stats_BPD/ROI_G-cosinor_dx1.rds")
+ROI_Gcosinor_dx01 <- read_rds("output/ROI_cosinor_stats_BPD/ROI_G-cosinor_dx01.rds")
+
+wb_aa <- read_rds("output/WB_AA.rds") |> mutate(dx = 0)
+wb_aa_dx1 <- read_rds("output/WB_cosinor_stats_BPD/WB_AA_dx1.rds")
+wb_aa_dx01 <- read_rds("output/WB_cosinor_stats_BPD/WB_AA_dx01.rds")
+roi_aa <- read_rds("output/ROI_AA.rds")
+roi_aa_dx1 <- read_rds("output/ROI_cosinor_stats_BPD/ROI_AA_dx1.rds")
+roi_aa_dx01 <- read_rds("output/ROI_cosinor_stats_BPD/ROI_AA_dx01.rds")
+```
+
+# Table 2: Table of Key Statistics
+
+```{r fig.width=12}
+library(flextable)
+# Merge tables for table 2
+gcos_tab <- function(pcr, wpcr, sigonly = FALSE, aa = NULL) {
+  preft <-
+    pcr |>
+    filter(ifelse(sigonly, pvalue < 0.05, T)) |>
+    rbind(wpcr |> mutate(measure = "weight")) |>
+    select(measure, MESOR, amp = amplitude, acro = acrophase, everything()) |>
+    rename(p = pvalue) |>
+    select(measure:MESOR_u, MESOR_l, everything()) |>
+    arrange(factor(measure, levels = fig1_modord)) |>
+    mutate(MESOR = paste0(
+      my_val_formatter(MESOR, mf = FALSE),
+      " [", my_val_formatter(MESOR_l, mf = FALSE),
+      ",", my_val_formatter(MESOR_u, mf = FALSE), "]"
+    )) |>
+    select(-MESOR_l, -MESOR_u) |>
+    mutate(amp = paste0(
+      my_val_formatter(amp, mf = FALSE),
+      " [", my_val_formatter(ifelse(amp_l < 0, 0.0, amp_l), mf = FALSE),
+      ",", my_val_formatter(amp_u, mf = FALSE), "]"
+    )) |>
+    select(-amp_l, -amp_u) |>
+    mutate(acro = ifelse(is.na(acro_l), as.character(round(acro)),
+      paste0(
+        round(acro), " [",
+        round(acro_l %% 24), ",",
+        round(acro_u %% 24), "]"
+      )
+    )) |>
+    select(-acro_l, -acro_u) |>
+    mutate(F = my_val_formatter(F, mf = FALSE)) |>
+    mutate(rsq = my_val_formatter(rsq, mf = FALSE)) |>
+    mutate(rsqdm = my_val_formatter(rsqdm, mf = FALSE)) |>
+    rename(df = df2) |>
+    select(-df1)
+
+
+  if (!is.null(aa)) {
+    preft <- preft |>
+      inner_join(aa |>
+        mutate(p_aa = p) |>
+        select(measure, chisq, p_aa))
+  }
+
+  # tex export
+  # Maybe use kable instead
+  # print(xtable::xtable(preft))
+
+  ft <- preft |>
+    # mutate(measure=paste0(int2extlab[measure]," [",munits[measure],"]")) |>
+    mutate(units = munits[measure]) |>
+    mutate(measure = int2extlab[measure]) |>
+    flextable() |>
+    set_header_labels(values = c(
+      measure = "Metric",
+      amp = "Amplitude [95% CI]",
+      acro = "Acrophase_24 [95% CI]",
+      rsq = "R2UN",
+      rsqdm = "R2DM",
+      res.df = "Residual DF",
+      F = "F(2,DF)",
+      rss = "RSS",
+      df = "DF",
+      sumsq = "SS",
+      MESOR = "MESOR [95% CI]",
+      p = "p"
+    ))
+
+  if (sigonly) {
+    ft |>
+      set_formatter_type() |>
+      set_formatter(values = list("p" = myfmt)) |>
+      set_formatter(values = list("rsq" = myfmt)) |>
+      set_formatter(values = list("df" = format)) |>
+      autofit()
+  } else {
+    ft |>
+      set_formatter_type() |>
+      set_formatter(values = list("p" = myfmt)) |>
+      set_formatter(values = list("p_aa" = myfmt)) |>
+      set_formatter(values = list("rsq" = myfmt)) |>
+      set_formatter(values = list("chisq" = myfmt)) |>
+      set_formatter(values = list("df" = format)) |>
+      bold(i = ~ p < .05) |>
+      autofit()
+  }
+}
+
+gcos_tab(WB_Gcosinor, weight_Gcosinor, sigonly = T)
+gcos_tab(WB_Gcosinor_dx1, weight_Gcosinor_dx1, sigonly = T)
+gcos_tab(WB_Gcosinor_dx01, weight_Gcosinor_dx01, sigonly = T)
+```
+
+## All (Supp)
+
+```{r}
+gcos_tab(WB_Gcosinor, weight_Gcosinor, sigonly = F, 
+            aa = wb_aa |> rbind(read_rds("output/body_weight/weight_AA_dx0.rds")))
+gcos_tab(WB_Gcosinor_dx1, weight_Gcosinor_dx1, sigonly = F, aa = wb_aa_dx1 |> select(-dx) |> rbind(read_rds("output/body_weight/weight_AA_dx1.rds")))
+ft <- gcos_tab(WB_Gcosinor_dx01, weight_Gcosinor_dx01, sigonly = F, aa = wb_aa_dx01 |> rbind(read_rds("output/body_weight/weight_AA_dx01.rds")))
+```
+
+# Table 2: Regional summaries
+
+```{r}
+library(flextable)
+gcos_tab_roi <- function(ROI_Gcosinor, sigonly = FALSE, aa = NULL) {
+  thisfmt <- function(x) my_val_formatter(x, mf = FALSE)
+
+  # ad hoc method to find the most useful range of unimodal circular data
+  # relative to the mean
+  circrange <- function(x) {
+    range(circamean(x) + circdist(x, circamean(x)))
+  }
+  
+  preft <- ROI_Gcosinor |>
+    group_by(measure) |>
+    filter(ifelse(sigonly, any(qvalue < 0.05), T)) |>
+    summarize(
+      sum_p = paste0(
+        my_val_formatter(mean(pvalue < 0.05) * 100), "% (", sum(pvalue < 0.05),
+        "/", length(pvalue), "; ", sum(qvalue < 0.05), ")"
+      ),
+      p_pct = mean(pvalue < 0.05) * 100,
+      q_pct = mean(qvalue < 0.05) * 100,
+      p_n = paste0(sum(pvalue < 0.05), "/", length(pvalue)),
+      q_n = paste0(sum(qvalue < 0.05), "/", length(qvalue)),
+      rsq_rng = ifelse(any(qvalue < 0.05),
+        {
+          r <- range(rsq[qvalue < 0.05])
+          paste0(thisfmt(r[1]), "-", thisfmt(r[2]))
+        },
+        "-"
+      ),
+      rsqdm_rng = ifelse(any(qvalue < 0.05),
+        {
+          r <- range(rsqdm[qvalue < 0.05])
+          paste0(thisfmt(r[1]), "-", thisfmt(r[2]))
+        },
+        "-"
+      ),
+      amp_rng = ifelse(any(qvalue < 0.05),
+        {
+          r <- range(amplitude[qvalue < 0.05])
+          paste0(thisfmt(r[1]), "-", thisfmt(r[2]))
+        },
+        "-"
+      ),
+      acro_rng = ifelse(any(qvalue < 0.05),
+        {
+          r <- circrange(acrophase[qvalue < 0.05]) %% 24
+          paste0(round(r[1]), "-", round(r[2]))
+        },
+        "-"
+      ),
+      MESOR_rng = ifelse(any(qvalue < 0.05),
+        {
+          r <- range(MESOR[qvalue < 0.05])
+          paste0(thisfmt(r[1]), "-", thisfmt(r[2]))
+        },
+        "-"
+      )
+    ) |>
+    arrange(-q_pct, -p_pct) |>
+    select(measure, MESOR_rng, acro_rng, amp_rng, sum_p, rsq_rng, rsqdm_rng)
+
+
+  if (!is.null(aa)) {
+    preft <- preft |>
+      inner_join(aa |>
+        group_by(measure) |>
+        summarize(sum_aa = paste0(
+          my_val_formatter(mean(p < 0.05) * 100), "% (", sum(p < 0.05),
+          "/", length(p), "; ", sum(q < 0.05), ")"
+        )))
+  }
+
+  preft |>
+    mutate(measure = paste0(int2extlab[measure], " [", munits[measure], "]")) |>
+    flextable() |>
+    set_header_labels(values = c(
+      measure = "Measure [units]",
+      amp = "Amplitude [95% CI]",
+      acro_pcf = "Acrophase_24 [95% CI]",
+      rsq = "R Squared",
+      res.df = "Residual DF",
+      F = "F(2,DF)",
+      rss = "RSS",
+      df = "DF",
+      sumsq = "SS",
+      MESOR = "MESOR [95% CI]",
+      p = "p",
+      rsqdm = "R Squared DM"
+    )) |>
+    set_formatter_type() |>
+    set_formatter(values = list("p" = myfmt)) |>
+    set_formatter(values = list("df" = format)) -> tmp
+
+  if (sigonly) {
+    tmp |> autofit()
+  } else {
+    tmp |>
+      autofit()
+  }
+}
+
+gcos_tab_roi(ROI_Gcosinor, sigonly = T)
+gcos_tab_roi(ROI_Gcosinor_dx1, sigonly = T)
+gcos_tab_roi(ROI_Gcosinor_dx01, sigonly = T)
+```
+
+## All (Supp)
+
+```{r}
+gcos_tab_roi(ROI_Gcosinor, sigonly = F, aa = roi_aa)
+gcos_tab_roi(ROI_Gcosinor_dx1, sigonly = F, aa = roi_aa_dx1)
+gcos_tab_roi(ROI_Gcosinor_dx01, sigonly = F, aa = roi_aa_dx01)
+```
+
+

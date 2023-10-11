@@ -1,0 +1,30 @@
+---
+title: "Whole-brain S-cosinor (controls)"
+---
+
+```{r}
+source("code/setup.R")
+meandf <- read_csv("data/available_upon_request/whole_brain_data.csv") |> filter(dx == 0)
+```
+
+# S-cosinor Fits
+
+With the whole-brain data, summary:
+
+```{r}
+summary(meandf)
+```
+
+Applying (S-)cosinor to each subject-metric.
+
+```{r}
+WB_Scosinor <-
+  meandf |>
+  group_by(measure, subject) |>
+  do(discoCosinor(matrix(.$value, nrow = 1), .$ltime))
+summary(WB_Scosinor)
+
+write_rds(WB_Scosinor, "output/WB_S-cosinor.rds")
+```
+
+

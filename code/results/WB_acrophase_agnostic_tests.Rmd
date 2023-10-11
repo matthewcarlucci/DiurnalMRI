@@ -1,0 +1,25 @@
+---
+title: "Whole-brain acrophase-agnostic test in controls"
+---
+
+```{r setup}
+source("code/setup.R")
+WB_Scosinor <- read_rds("output/WB_S-cosinor.rds")
+```
+
+We can generically test the hypothesis by combining p-values from within-subject fits using fishers method of p-value averaging.
+
+# Fisher's method
+
+```{r}
+WB_AA <- 
+  WB_Scosinor |>
+  group_by(measure) |>
+  summarize(res = list(metap::sumlog(pvalue))) |>
+  mutate(p = map_dbl(res, `$`, "p")) |>
+  mutate(chisq = map_dbl(res, `$`, "chisq")) |>
+  select(-res)
+WB_AA
+
+WB_AA |> write_rds("output/WB_AA.rds")
+```

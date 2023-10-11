@@ -1,0 +1,29 @@
+---
+title: "Whole-brain group-level (G-)cosinor"
+---
+
+```{r}
+source("code/setup.R")
+meandf <- read_csv("data/available_upon_request/whole_brain_data.csv") |> filter(dx == 0)
+WB_Scosinor <- read_rds("output/WB_S-cosinor.rds")
+```
+
+Using a custom function to carry one with within-subject cosinor fits to perform G-cosinor analysis.
+
+```{r}
+WB_Gcosinor <-
+  WB_Scosinor |>
+  group_by(measure) |>
+  # Zero-amp
+  do(discoPMcos(.)) |>
+  # Get rsq from original data
+  rsqGcos(meandf |> mutate(roi = "WB"))
+WB_Gcosinor
+```
+
+Exporting results
+
+```{r export}
+write_rds(WB_Gcosinor, "output/WB_G-cosinor.rds")
+```
+

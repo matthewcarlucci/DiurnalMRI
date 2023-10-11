@@ -1,0 +1,101 @@
+---
+title: Supplemental Factors - Weight
+---
+
+```{r}
+source("code/setup.R")
+meandf <- read_csv("data/available_upon_request/whole_brain_data.csv") |> filter(dx == 0)
+weights <-
+  read_csv("data/available_upon_request/weights_kg.csv") |>
+  filter(dx == 0) |>
+  group_by(subject) |>
+  ungroup() |>
+  mutate(ltime = ifelse(session_is_day2(session, time), time + 24, time))
+```
+
+### S/G-cosinor with weight as covariate in S-cosinor
+
+```{r}
+res <-
+  meandf |>
+  inner_join(weights |> select(weight, subject, session)) |>
+  group_by(measure, subject) |>
+  nest() |>
+  mutate(res = map(data, \(x){
+    fit <- lm(value ~ sinpi(ltime / 12) + cospi(ltime / 12) + weight, x)
+    ret <- data.frame(
+      mesor = fit$coefficients[1],
+      sincoef = fit$coefficients[2],
+      coscoef = fit$coefficients[3]
+    )
+    return(ret)
+  })) |>
+  unnest(res) |>
+  group_by(measure, subject) |>
+  select(measure, mesor, sincoef, coscoef) %>%
+  nest() |>
+  group_by(measure) |>
+  do(discoPMcos(.$data)) |>
+  select(-qvalue)
+res
+```
+
+### Table Sadj_weight Weight adjusted G-cosinor
+
+```{r}
+library(flextable)
+preft <-
+  res |>
+  select(measure, MESOR, amplitude, acro_pcf = acrophase, everything()) |>
+  select(measure:MESOR_u, MESOR_l, everything()) |>
+  arrange(factor(measure, levels = fig1_modord)) |>
+  mutate(measure = int2extlab[measure]) |>
+  mutate(MESOR = paste0(
+    myfmt2(MESOR),
+    " [", myfmt2(MESOR_l),
+    ",", myfmt2(MESOR_u), "]"
+  )) |>
+  select(-MESOR_l, -MESOR_u) |>
+  mutate(amplitude = paste0(
+    myfmt2(amplitude),
+    " [", myfmt2(ifelse(amp_l < 0, 0, amp_l)),
+    ",", myfmt2(amp_u), "]"
+  )) |>
+  select(-amp_l, -amp_u) |>
+  mutate(acro_pcf = ifelse(is.na(acro_l), myfmt2(acro_pcf),
+    paste0(
+      myfmt2(acro_pcf), " [",
+      myfmt2(acro_l), ",",
+      myfmt2(acro_u), "]"
+    )
+  )) |>
+  select(-acro_l, -acro_u) |>
+  rename(df = df2) |>
+  select(-df1)
+
+ft <- preft |>
+  flextable() |>
+  set_header_labels(values = c(
+    measure = "Measure",
+    amplitude = "Amplitude [95% CI]",
+    acro_pcf = "Acrophase_24 [95% CI]",
+    rsq = "R Squared",
+    rsqdm = "R Squared Demeaned",
+    res.df = "Residual DF",
+    F = "F(2,DF)",
+    rss = "RSS",
+    df = "DF",
+    sumsq = "SS",
+    MESOR = "MESOR [95% CI]",
+    p = "p"
+  ))
+
+ft |>
+  set_formatter_type() |>
+  set_formatter(values = list("pvalue" = myfmt)) |>
+  set_formatter(values = list("F" = myfmt)) |>
+  set_formatter(values = list("rsq" = myfmt)) |>
+  set_formatter(values = list("df" = format)) |>
+  bold(i = ~ pvalue < .05) |>
+  autofit()
+```

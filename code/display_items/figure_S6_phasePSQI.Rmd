@@ -1,0 +1,78 @@
+---
+title: Phase-shift PSQI
+---
+
+```{r results='asis'}
+if(!file.exists("data/private/subject_meta.csv")){
+ cat("**The data/private/subject_meta.csv required for this page is not available
+ due to privacy concerns. Skipping execution...**")
+  knitr::knit_exit()
+}
+```
+
+```{r}
+source("code/setup.R")
+WB_Scosinor_dx01 <- rbind(
+  read_rds("output/WB_cosinor_stats_BPD/WB_S-cosinor_dx1.rds"),
+  read_rds("output/WB_S-cosinor.rds") |>
+    mutate(dx = factor(0))
+)
+WB_Gcosinor_dx01 <- read_rds("output/WB_cosinor_stats_BPD/WB_G-cosinor_dx01.rds")
+
+df <- read_csv("data/available_upon_request/whole_brain_data.csv")
+df <- df |> mutate(dx = as.factor(dx))
+```
+
+### Figure pspsqi
+
+```{r fig.height=4, fig.width=5}
+cbf_acro <- WB_Gcosinor_dx01 |>
+  filter(measure == "cbf") |>
+  pull(acrophase)
+
+meta <- read_csv("data/private/subject_meta.csv") |> 
+  mutate(dx=factor(dx))
+
+# Correlations
+tmp <- WB_Scosinor_dx01 |>
+  filter(measure == "cbf") |>
+  inner_join(meta) |>
+  filter(dx == 1)
+c1 <- cor.test(abs(circdist(cbf_acro, tmp$acrophase)), tmp$psqi_score)
+
+tmp <- WB_Scosinor_dx01 |>
+  filter(measure == "cbf") |>
+  inner_join(meta) |>
+  filter(dx == 0)
+c2 <- cor.test(abs(circdist(cbf_acro, tmp$acrophase)), tmp$psqi_score)
+
+# Figure
+WB_Scosinor_dx01 |>
+  filter(measure == "cbf") |>
+  inner_join(meta) |>
+  ggplot(aes(psqi_score, abs(circdist(cbf_acro, acrophase)), color = dx2lab(dx))) +
+  geom_vline(xintercept = 5, linetype = 3) +
+  geom_point(alpha = 0.8) +
+  scale_color_dxlab() +
+  # ggrepel::geom_label_repel(aes(label=subject))+
+  scale_x_continuous(breaks = seq(0, 14, 2)) +
+  geom_smooth(method = "lm", se = F) +
+  theme_minimal() +
+  annotate(
+    geom = "text", x = 10, y = 0.9, label = paste0(
+      "Control r=", my_val_formatter(c2$estimate),
+      " p=", my_val_formatter(c2$p.value)
+    ),
+    color = colors$dx0, size = 3
+  ) +
+  annotate(
+    geom = "text", x = 8, y = 9, label = paste0(
+      "BPD r=", my_val_formatter(c1$estimate),
+      " p=", my_val_formatter(c1$p.value)
+    ),
+    color = colors$dx1, size = 3
+  ) +
+  xlab("PSQI") +
+  ylab("Phase shift (hr)") +
+  labs(color = "")
+```

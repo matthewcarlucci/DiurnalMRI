@@ -1,0 +1,20 @@
+Package: DiurnalMRI
+Title: DiurnalMRI package skeleton for installing dependencies needed for this project.
+Version: 1.0
+Authors@R: person(given = "First",
+           family = "Last",
+           role = c("aut", "cre"),
+           email = "first.last@example.com",
+           comment = c(ORCID = "YOUR-ORCID-ID"))
+Description: Implements the statistical methods described in the diurnal MRI study. Contains the analysis archive which applies the methods to the data and generates figures, tables, and other key statistics. 
+License: MIT + file LICENSE
+Imports: 
+    dfoptim,
+    multtest,
+    DiscoRhythm,
+    metap
+BiocViews:
+Encoding: UTF-8
+LazyData: true
+Roxygen: list(markdown = TRUE)
+RoxygenNote: 7.2.3

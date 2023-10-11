@@ -1,0 +1,31 @@
+---
+title: "Regional S-cosinor Controls"
+---
+
+```{r}
+source("code/setup.R")
+df <- read_csv("data/available_upon_request/processed_ROI_data.csv") |> filter(dx == 0)
+```
+
+Cosinor F-test is performed on each subject, each ROI and saved for later use.
+
+```{r get_by_visit_cosinor_results}
+# By subject cosinor (S-cosinor)
+ROI_Scosinor <-
+  df |>
+  group_by(measure, subject) |>
+  nest() |>
+  mutate(bsc = map(data, \(x){
+    se <- x |>
+      select(roi, ltime, value) |>
+      pivot_wider(names_from = ltime) |>
+      data.frame() |>
+      discoDFtoSE()
+    res <- discoODAs(se, method = "CS")$CS
+    return(data.frame(roi = rownames(res), res))
+  })) |>
+  select(-data)
+summary(ROI_Scosinor)
+
+write_rds(ROI_Scosinor, "output/ROI_S-cosinor.rds")
+```

@@ -1,0 +1,272 @@
+---
+title: "Actigraphy"
+---
+
+```{r}
+source("code/setup.R")
+library(lubridate)
+only3 <- read_csv("data/available_upon_request/actigraphy_3day.csv")
+sleep_dat <- read_csv("data/available_upon_request/actigraphy_sleep_data.csv")
+```
+
+# Main figure summaries
+
+```{r}
+# Source Data
+figS5bSD <-
+  only3 |>
+  # Bin/sum data
+  group_by(subject, rhours = round((hours) * 0.5) / 0.5, group) |>
+  summarize(value = sum(value)) |>
+  # Average across days
+  group_by(subject, tod = rhours %% 24, group) |>
+  summarize(value = mean(value)) |>
+  # Group-wise stats
+  group_by(group, tod) |>
+  summarize(
+    mval = mean(value),
+    se = sd(value) / sqrt(length(value))
+  )
+write_csv(figS5bSD,"output/source_data/Figure_S5b.csv")
+
+binned_act_p <-
+ figS5bSD |>
+  ggplot(aes(tod, mval, color = group)) +
+  night_rect_early() +
+  geom_line() +
+  ylab("Average Steps") +
+  scale_color_dxlab() +
+  scale_fill_dxlab() +
+  scale_x_continuous(breaks = seq(0, 24, 3)) +
+  theme_minimal() +
+  geom_ribbon(aes(ymin = mval - se * 1.96, ymax = mval + se * 1.96, fill = group), 
+              alpha = 0.7, color = NA) +
+  geom_point(size = 0.8)
+binned_act_p
+```
+
+# Periodogram
+
+```{r}
+spec <- lapply(4:40, function(per) {
+  only3 |>
+    group_by(subject, group) |>
+    do(discoCosinor(t(matrix(.$value)), .$hours, per = per)) |>
+    mutate(per = per)
+}) |> rbindlist()
+
+# Source Data
+figS5cSD <-
+  spec |>
+  group_by(per, group) |>
+  summarise(arsq = mean(Rsq), se = sd(Rsq) / sqrt(length(Rsq)))
+write_csv(figS5cSD,"output/source_data/Figure_S5c.csv")
+
+spect_p <-
+  figS5cSD |>
+  ggplot(aes(per, arsq, color = group)) +
+  scale_color_dxlab() +
+  scale_fill_dxlab() +
+  scale_x_continuous(breaks = seq(0, 40, by = 6)) +
+  ylab("Spectral power of actigraphy rhythm") +
+  geom_ribbon(aes(
+    ymin = arsq - se * 1.96,
+    ymax = arsq + se * 1.96,
+    fill = group
+  ), alpha = 0.7, color = NA) +
+  geom_point(size = 0.8) +
+  geom_line()
+spect_p
+```
+
+# Summarizing sleep data
+
+How to merge sleeps, remove, etc.?
+Manually?
+
+```{r}
+act3_wasleep_p <-
+  only3 |>
+  ggplot() +
+  annotate(
+    geom = "rect", xmin = c(0, 24, 48, 72), xmax = c(8, 32, 56, 80),
+    ymin = 0, ymax = 200, fill = "grey90"
+  ) +
+  geom_line(aes(hours, value, group = subject, color = group)) +
+  geom_rect(data = sleep_dat,
+    aes(xmin = start_time, xmax = end_time),
+    group = NA, color = NA, 
+    ymin = -100, ymax = 0, fill = "black"
+  ) +
+  xlab("Time (hr)") +
+  facet_wrap(~subject, ncol = 4) +
+  coord_cartesian(xlim = c(0, 72)) +
+  scale_color_dxlab() +
+  theme_condense() +
+  scale_x_continuous(breaks = seq(0, 72, 12)) +
+  scale_y_continuous(breaks = c(0, 100, 200), limits = c(-25, 200))
+act3_wasleep_p
+```
+
+# Polar plot
+
+```{r fig.height=6,fig.width=6}
+# Aggregate and log10 data
+only3_binned <-
+  only3 |>
+  group_by(subject, time = floor(hours %% 24), group) |>
+  summarize(value = log10(sum(value) + 1)) |>
+  mutate(time = ifelse(time < 8, time + 24, time)) |>
+  mutate(ltime = time)
+
+# calc CS stats
+actCS <-
+  only3_binned |>
+  group_by(subject, group) |>
+  do(discoCosinor(t(matrix(.$value)), .$ltime))
+
+pcr <-
+  actCS |>
+  ungroup() |>
+  group_by(group) |>
+  do(discoPMcos(.)) |>
+  mutate(measure = "actigraphy") |>
+  rsqGcos(only3_binned |> mutate(roi = "actigraphy", measure = "actigraphy"))
+
+# For CI plotting only (fixing 24/0 overlap)
+mypcr <- lapply(1:nrow(pcr), function(i) {
+  thispcr <- pcr[i, ]
+
+  if (pcr$acro_u[i] > 24) {
+    if (pcr$acro[i] > 24) thispcr$acrophase <- pcr$acro[i] %% 24
+    tmp <- rbind(thispcr, thispcr)
+    tmp$acro_u[1] <- 24
+    tmp$acro_l[2] <- 0
+    tmp$acro_u[2] <- tmp$acro_u[2] %% 24
+    thispcr <- tmp
+  }
+
+
+  if (pcr$acro_l[i] < 0) {
+    if (pcr$acro[i] > 24) thispcr$acrophase <- pcr$acrophase[i] %% 24
+    tmp <- rbind(thispcr, thispcr)
+    tmp$acro_l[1] <- tmp$acro_l[1] %% 24
+    tmp$acro_u[1] <- 24
+    tmp$acro_l[2] <- 0
+    tmp$acro_u[2] <- tmp$acro_u[2] %% 24
+    thispcr <- tmp
+  }
+
+  return(thispcr)
+}) |> rbindlist()
+
+# Acrophase consistency
+dxres <-
+  actCS |>
+  group_by(group) |>
+  summarize(
+    cohort_resultant = acro2complex(acrophase) |> mean() |> abs(),
+    cm = circamean(acrophase)
+  )
+
+
+# (Partial) Source Data
+mypcr |> 
+  select(group,acrophase,acro_l,acro_u) |> 
+  inner_join(dxres) |> 
+  write_csv("output/source_data/Figure_S5d_partial.csv")
+
+act_p <-
+  actCS |>
+  ggplot(aes(acrophase, 1 - pvalue)) +
+  ylab(expression(abs(rho))) +
+  night_rect_early() +
+  geom_rect(
+    xmin = 0, xmax = 24, ymin = 0, ymax = 1, alpha = 0.1,
+    color = NA, fill = "whitesmoke"
+  ) +
+  geom_rect(xmin = 0, xmax = 24, ymin = -Inf, ymax = 0, fill = "white") +
+  geom_hline(yintercept = 1, color = "black", size = 0.2) +
+  geom_hline(yintercept = 0.5, color = "black", size = 0.2, linetype = 3) +
+  geom_text(aes(color = group, y = 1, angle = -acrophase / 24 * 360 - 90), size = 5, label = "-") +
+  geom_point(data = mypcr, aes(acrophase, y = ifelse(group == "BPD", 1.6, 1.3), color = group), size = 1.2) +
+  geom_errorbar(data = mypcr, aes(
+    xmin = acro_u, xmax = acro_l,
+    y = ifelse(group == "BPD", 1.6, 1.3),
+    color = group
+  ), width = 0.25) +
+  scale_color_manual(values = c(
+    "BPD" = colors$dx1,
+    "CNTRL" = colors$dx0,
+    "Combined" = colors$dx01
+  )) +
+  theme(
+    panel.border = element_blank(),
+    panel.background = element_blank(),
+    panel.grid = element_blank(),
+    panel.spacing.x = unit(0, "line")
+  ) +
+  coord_polar() +
+  theme(
+    panel.grid.minor.x = element_blank(),
+    panel.grid.minor.y = element_blank(),
+    panel.grid.major.x = element_blank()
+  ) +
+  theme(panel.spacing = unit(0, "lines")) +
+  scale_y_continuous(breaks = c(0, 1), limits = c(-0, 2.2)) +
+  xlab("Activity Acrophase (hr)") +
+  geom_segment(
+    data = dxres,
+    aes(xend = cm, x = cm, y = 0, yend = cohort_resultant, color = group),
+    size = 0.5, arrow = arrow(type = "closed", length = unit(1.2, "mm"))
+  ) +
+  scale_x_continuous(limits = c(0, 24), breaks = seq(0, 24, 6)) +
+  theme_condense() +
+  theme(
+    panel.border = element_blank(),
+    panel.background = element_blank(),
+    # Legend
+    legend.title.align = 0,
+    legend.position = "right",
+    legend.title = element_text(size = 8, vjust = 0, hjust = -3),
+    panel.spacing.x = unit(1, "line"),
+    panel.grid.minor.x = element_line(color = "grey"),
+    panel.grid.major.x = element_line(color = "grey")
+  )
+act_p
+```
+
+# Figure Ssleep
+
+```{r fig.width=8,fig.height=5.5}
+library(patchwork)
+act3_wasleep_p + xlab("Time of Day (hr)") + ylab("Activity (Steps)") +
+  binned_act_p + xlab("Time of Day (hr)") +
+  spect_p + xlab("Period (hr)") +
+  act_p +
+  plot_layout(design = "
+              AAAAAAABB
+              AAAAAAABB
+              AAAAAAACC
+              AAAAAAACC
+              AAAAAAADD
+              AAAAAAADD
+              AAAAAAADD
+              ") +
+  plot_annotation(tag_levels = "a") +
+  plot_layout(guides = "collect")
+```
+
+### Export
+
+Peak activities and sleep durations.
+
+```{r}
+# Aggregate over 3 days of sleep data for average sleep/day
+sleep_durs <- 
+  sleep_dat |> 
+  group_by(subject) |> 
+  summarize(sleep_dur=sum(end_time-start_time)/3)
+
+inner_join(actCS, sleep_durs) |> saveRDS("output/actigraphy_cosinor.rds")
+```

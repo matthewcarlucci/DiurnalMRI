@@ -1,0 +1,615 @@
+---
+title: Figure 3 and Figure S3
+---
+
+```{r setup}
+source("code/setup.R")
+
+# Data prep
+WB_Gcosinor <- read_rds("output/WB_G-cosinor.rds")
+WB_Scosinor <- read_rds("output/WB_S-cosinor.rds")
+# Gather results
+ROI_Gcosinor <- readRDS("output/ROI_G-cosinor.rds")
+ROI_Scosinor <- readRDS("output/ROI_S-cosinor.rds") |> unnest(bsc)
+
+plotdf <-
+  ROI_Scosinor |>
+  # Calc summary stats
+  group_by(measure,subject) |> 
+  mutate(sub_resultant=acro2complex(acrophase) |> mean() |> abs()) |> 
+  inner_join(WB_Scosinor |> select(measure,subject,sub_macro=acrophase)) |> 
+  group_by(measure,roi) |> 
+  rename(p_sub_cos = pvalue) |> 
+  group_by(measure) |> 
+  mutate(p_rank=-rank(p_sub_cos)/length(p_sub_cos)) |> 
+  # Join to rest
+	group_by(measure,roi) |> 
+	nest(by_visit = c(-measure,-roi)) |>
+	inner_join(ROI_Gcosinor |> 
+			   	select(measure, roi, 
+			   	       p_gcos_cos=pvalue,
+			   	       gcos_acro = acrophase, acro_u, acro_l,
+			   	       gcos_amp = amplitude,
+			   	       q_gcos_cos = qvalue,
+			   	       amp_u,
+			   	       amp_l,
+			   	       gcos_mesor = MESOR))
+
+# Ordering ROIs and adjusting acrophases
+tmpdf <-
+	plotdf |>
+	unnest(by_visit) |>
+	ungroup() |> 
+	group_by(measure) |> 
+	nest() |> 
+	mutate(tmp=map(data,function(x){
+		x |> 
+			mutate(roif=factor(roi)) |>
+			mutate(subject=factor(subject)) |> 
+			ungroup() |> 
+			arrange(p_gcos_cos,(sub_macro)%%24) |> 
+			mutate(roif=fct_inorder(roif)) |> 
+			mutate(subject=fct_inorder(subject)) |> 
+			mutate(subjectn=as.numeric(subject)) |> 
+			mutate(roin=as.numeric(roif)) |> 
+			mutate(roif2=fct_inorder(roif)) |> 
+			mutate(roin2=as.numeric(roif2))
+	})) |> unnest(tmp) |> 
+	ungroup() |> 
+	arrange(measure) |> 
+	mutate(roin_comb=factor(paste(measure,roin))) |> 
+	mutate(roin_comb=fct_inorder(roin_comb))
+```
+
+Applying some preprocessing to the data:
+
+- Ordering ROIs and subjects
+- Adjusting acrophases to a 9-33 timescale
+
+# Figure 3a: Subject vs Acrophase {.tabset}
+
+## Figure S3a: Tick plot
+
+```{r f3a-sub-act, fig.width=3}
+# https://github.com/dgrtwo/drlib/blob/master/R/reorder_within.R
+# For applying unique orderings within each facet while retaining
+# the original labels
+reorder_within <- function(x, by, within, fun = mean, sep = "___", ...) {
+  new_x <- paste(x, within, sep = sep)
+  stats::reorder(new_x, by, FUN = fun)
+}
+scale_y_reordered <- function(..., sep = "___") {
+  reg <- paste0(sep, ".+$")
+  ggplot2::scale_y_discrete(labels = function(x) gsub(reg, "", x), ...)
+}
+scale_x_reordered <- function(..., sep = "___") {
+  reg <- paste0(sep, ".+$")
+  ggplot2::scale_x_discrete(labels = function(x) gsub(reg, "", x), ...)
+}
+
+binsize=0.1
+cuts <- seq(0,24,binsize)
+bins <- levels(cut(1,cuts))
+
+f3a_sub_act <-
+	tmpdf |>
+  mutate(measure=recode(measure, !!!int2extlab)) |> 
+  group_by(measure,subject,sub_macro) |> 
+	summarize(acro_cnt = table(cut(acrophase,cuts)) |> enframe()) |> 
+	unnest(acro_cnt) |> 
+	mutate(tod=cuts[which(bins == name)]+binsize/2) |> 
+	mutate(value=as.numeric(value)/sum(value)) |>
+	filter(value!=0) |> 
+	ggplot(aes(reorder_within(subject, (sub_macro)%%24, measure),tod))+
+	night_recty_early()+
+	night_recty()+
+	scale_x_reordered()+
+	xlab("Subject")+ylab("ROI S-cosinor Acrophase")+
+  geom_tile(fill="black",width=0.5,height=binsize)+
+	coord_flip()+
+	facet_grid(measure~.,scales="free")+ #,space = "free")
+  geom_point(data=WB_Scosinor |> 
+               mutate(measure=recode(measure, !!!int2extlab)),
+             aes(reorder_within(subject,(acrophase)%%24, measure),
+                 acrophase,group=NA),size=1,alpha=0.7,color=colors$ssc,
+             position=position_nudge(x = 0.3, y = 0))+
+	scale_y_continuous(limits=c(0,24),breaks=seq(0,24,3))+
+  theme_condense()
+f3a_sub_act
+```
+
+## Figure 3a: Subset for main fig
+
+```{r fig.width=2.8,fig.height=8.5}
+binsize=0.1
+cuts <- seq(0,24,binsize)
+bins <- levels(cut(1,cuts))
+
+# (Partial) Source Data
+write_csv(WB_Gcosinor |> 
+  filter(measure %in% c("cbf","gm_md","md")) |> 
+  mutate(measure=recode(measure, !!!int2extlab)) |> 
+  select(measure,acrophase),"output/source_data/Figure_3a_partial.csv")
+
+f3a_sub_act_ss <-
+	tmpdf |> filter(measure %in% c("cbf","gm_md","md","qt1")) |>
+  # Keep measure ordering
+  mutate(measure=recode(measure, !!!int2extlab)) |> 
+  group_by(measure,subject,sub_macro) |> 
+	summarize(acro_cnt = table(cut(acrophase,cuts)) |> enframe()) |> 
+	unnest(acro_cnt) |> 
+	mutate(tod=cuts[which(bins == name)]+binsize/2) |> 
+  # get acrobins with data
+	mutate(value=as.numeric(value)/sum(value)) |>
+	filter(value!=0) |> 
+	ggplot(aes(reorder_within(subject, (sub_macro)%%24, measure),tod))+
+	night_recty_early()+
+  night_recty()+
+	scale_x_reordered()+
+	xlab("Subject")+ylab("ROI S-cosinor Acrophase")+
+  #Data
+  geom_point(data=WB_Scosinor |> 
+               filter(measure %in% c("cbf","gm_md","md","qt1")) |> 
+               mutate(measure=recode(measure, !!!int2extlab)),
+             aes(reorder_within(subject,(acrophase)%%24, measure),
+                 acrophase,group=NA),size=1.5,alpha=0.7,color=colors$ssc,
+             position=position_nudge(x = 0.3, y = 0))+
+  geom_tile(fill="black",width=0.5,height=binsize)+
+  coord_flip(ylim = c(0,24))+
+	facet_grid(measure~.,scales="free")+ #,space = "free")
+  geom_hline(data=WB_Gcosinor |> 
+               filter(measure %in% c("cbf","gm_md","md")) |> 
+               mutate(measure=recode(measure, !!!int2extlab)),
+             aes(yintercept=acrophase,group=NA),
+             size=1,color=colors$gcos_sig)+
+	scale_y_continuous(breaks=seq(0,24,3))+
+  theme_condense()+
+  theme(axis.text=element_text(size=8))
+f3a_sub_act_ss
+```
+
+
+# AcroVariance Summaries {.tabset}
+
+## Figure S3b: rho within-subject summary
+
+```{r fig.width=5}
+rhosum_p <-
+	plotdf |> 
+  mutate(measure=recode(measure, !!!int2extlab)) |> 
+	unnest(by_visit) |>
+	ungroup() |> 
+	select(measure,subject,sub_macro,sub_resultant) |> unique() |> 
+	ggplot(aes(reorder_within(subject, (sub_macro)%%24, measure),
+			   1-sub_resultant))+
+	geom_col(width = 0.5,fill="#C26179")+
+	coord_flip()+
+	xlab(NULL)+
+	ylab("Acrophase Variance")+
+	scale_x_reordered()+
+  scale_y_continuous(breaks=c(0,0.5,1))+
+	facet_grid(measure~.,scales="free")+
+	theme_condense()
+rhosum_p
+```
+
+## Figure 3a.2: rho within-subject summary (subset)
+
+```{r}
+rhosum_ss_p <-
+	plotdf |> 
+	filter(measure %in% c("cbf","gm_md","md","qt1")) |>   
+	unnest(by_visit) |>
+	ungroup() |> 
+	select(measure,subject,sub_macro,sub_resultant) |> unique() |> 
+	ggplot(aes(reorder_within(subject, (sub_macro)%%24, measure),
+			   1-sub_resultant))+
+	geom_col(width = 0.5,fill="#C26179")+
+	coord_flip()+
+	xlab(NULL)+
+	ylab(expression(1-abs(rho[within-subject])))+
+	scale_x_reordered()+
+  scale_y_continuous(breaks=c(0,0.5,1))+
+	facet_grid(int2extlab[measure]~.,scales="free")+ #,space = "free")+
+	theme_condense()
+rhosum_ss_p
+```
+
+
+# Figure S3c: ROI vs Acro {.tabset}
+
+For supplemental
+
+```{r p-roiact, fig.width=4}
+binsize=0.4
+cuts <- seq(0,24,binsize)
+bins <- levels(cut(1,cuts))
+
+# (Partial) Source Data
+figS3cSD <-
+  tmpdf |>
+  mutate(measure=recode(measure, !!!int2extlab)) |> 
+  filter(q_gcos_cos<0.05) |>
+  select(roin,roi,measure,tod=gcos_acro) |>
+  mutate(subject="Cohort") |> unique()
+write_csv(figS3cSD,"output/source_data/Figure_S3c_partial.csv")
+
+p_roiact<-
+  tmpdf |>
+  group_by(measure,roin) |> 
+  mutate(measure=recode(measure, !!!int2extlab)) |> 
+	summarize(acro_cnt = table(cut(acrophase,cuts)) |> enframe()) |> 
+	unnest(acro_cnt) |> 
+	mutate(tod=cuts[which(bins == name)]+binsize/2) |> 
+	mutate(value=as.numeric(value)/sum(value)) |> 
+	filter(value!=0) |> 
+	ggplot(aes(-roin,tod))+
+	night_recty_early()+
+	scale_x_reordered()+
+	ylab("ROI S(G)-cosinor Acrophase")+
+	xlab("ROI ranked by G-cosinor p")+
+  geom_tile(fill="black",width=1,height=binsize)+
+	coord_flip()+
+	facet_grid(measure~.,scales="free")+ #,space = "free")
+  geom_point(size=0.5,data=figS3cSD,color="blue",alpha=0.7)+
+	scale_y_continuous(limits=c(0,24),breaks=seq(0,24,3))+
+  theme_condense()
+p_roiact
+```
+
+# Polar scatter G-cosinor {.tabset}
+
+In main text, maximal acrophase differences are reported alongside the span of CIs
+
+```{r}
+plotdf |> 
+  inner_join(WB_Gcosinor |> select(measure,acrophase),by="measure") |> 
+  filter(q_gcos_cos<0.05) |> 
+  group_by(measure) |> 
+  summarize(circdist(gcos_acro,acrophase) |> abs() |> max())
+
+WB_Gcosinor |>
+  filter(pvalue<0.05) |> 
+  mutate(span=circdist(acro_u,acro_l)) |> 
+  select(measure,span)
+```
+
+## Figure 3c: Main
+
+```{r gcrose-ss-p, fig.height=8, fig.width=2.75}
+predat <- plotdf |>
+	filter(measure %in% c("cbf","gm_md","md","qt1")) |> 
+	group_by(measure) |> 
+	arrange(measure) |> 
+	mutate(nsig=sum(q_gcos_cos<0.05),n=n())
+
+## Source Data
+# ROI data
+fig3cSD <- 
+  predat |>
+  ungroup() |>
+  mutate(measure=int2extlab[measure]) |> 
+  select(measure, nsig, n, p_gcos_cos,q_gcos_cos,gcos_acro)
+write_csv(fig3cSD, "output/source_data/Figure_3c_part1.csv")
+# WB data
+fig3cSD2 <- 
+  WB_Gcosinor |> 
+  right_join(predat |> 
+               select(measure,nsig,n) |> 
+               unique()) |>
+  filter(pvalue<0.05) |> 
+  ungroup() |> 
+  mutate(measure=int2extlab[measure]) |> 
+  select(measure,nsig,n,pvalue,acrophase,acro_l,acro_u)
+write_csv(fig3cSD2,"output/source_data/Figure_3c_part2.csv")
+
+
+gcrose_ss_p <-
+  fig3cSD |> 
+  mutate(label=fct_inorder(paste0(measure," (",nsig,"/",n,")"))) |> 
+	ggplot(aes(gcos_acro,-log10(p_gcos_cos)))+
+	night_rect_early()+
+	geom_rect(xmin=-1,xmax=25,ymin=-2,ymax=0,fill="white",color=NA)+
+	annotate(geom="segment",x=seq(0,24,3),y=4,yend=0,xend=seq(0,24,3),
+             color="grey90",size=0.3)+
+  geom_hline(yintercept = 0,color="grey50")+
+	geom_hline(yintercept = c(1,2,3,4),color="grey90",size=0.5)+
+	coord_polar()+
+	scale_y_continuous(limits = c(-2,NA),breaks=c(0,1,2,3,4))+
+	scale_x_continuous(limits=c(0,24),breaks=seq(0,24,3))+
+	xlab("ROI G-cosinor Acrophase")+
+	ylab(expression(log[10](p[G])))+
+	# Making WM-MD larger since fewer ROIs
+  # unused
+	geom_point(aes(size=1/n,fill=q_gcos_cos<0.05),alpha=0.7,
+      shape=21, stroke=0,  
+      color="transparent"
+    )+
+	scale_size_continuous(range = c(1,1),guide='none')+
+  theme(panel.border=element_blank())+
+	theme(panel.grid=element_blank())+
+	geom_point(data=fig3cSD2 |> 
+	             	mutate(label=fct_inorder(paste0(measure," (",nsig,"/",n,")"))),  
+			   aes(acrophase,5,color=pvalue<0.05),size=2)+
+	geom_errorbar(data=fig3cSD2 |> mutate(label=fct_inorder(paste0(measure," (",nsig,"/",n,")"))),  
+			   aes(acrophase,5,xmin=acro_l,xmax=acro_u,
+			   	color=pvalue<0.05),size=1.5)+
+	scale_fill_manual(labels=c(bquote(q[G]*"<0.05"),
+								bquote(q[G]*">0.05")),
+								values = c("TRUE"=colors$gcos_sig,
+								  "FALSE"="black"),guide="none")+
+	scale_color_manual(labels=c(bquote(q[G]*"<0.05"),
+								bquote(q[G]*">0.05")),
+								values = c("TRUE"=colors$gcos_sig,
+								  "FALSE"="black"),guide='none')+
+  # Remove for post
+  # guides(color=guide_legend(title=""))+
+	facet_grid(label~.)+theme_condense()
+gcrose_ss_p
+```
+
+## Figure S3d: Sro3 
+
+```{r}
+# Copied from main fig code and commented out
+predat <- plotdf |>
+	# filter(measure %in% c("cbf","gm_md","md","qt1")) |> 
+	group_by(measure) |> 
+	arrange(measure) |> 
+	mutate(nsig=sum(q_gcos_cos<0.05),n=n())
+
+## Source Data
+# ROI data
+figS3dSD <- 
+  predat |>
+  ungroup() |> 
+  mutate(measure=int2extlab[measure]) |> 
+  select(measure,nsig,n, p_gcos_cos,n, q_gcos_cos,gcos_acro)
+write_csv(figS3dSD,"output/source_data/Figure_S3d_part1.csv")
+# WB data
+figS3dSD2 <- 
+  WB_Gcosinor |> 
+  right_join(predat |> 
+               select(measure,n,nsig) |> 
+               unique()) |>
+  filter(pvalue<0.05) |>
+  ungroup() |> 
+  mutate(measure=int2extlab[measure]) |> 
+  select(measure,nsig,n,acrophase,acro_l,acro_u,pvalue)
+write_csv(figS3dSD2,"output/source_data/Figure_S3d_part2.csv")
+
+
+gcrose_p <-
+	figS3dSD |> 
+  	mutate(label=fct_inorder(paste0(measure," (",nsig,"/",n,")"))) |> 
+	ggplot(aes(gcos_acro,-log10(p_gcos_cos)))+
+	night_rect_early()+
+	geom_rect(xmin=-1,xmax=25,ymin=-2,ymax=0,fill="white",color=NA)+
+	annotate(geom="segment",x=seq(0,24,3),y=4,yend=0,xend=seq(0,24,3),
+             color="grey90",size=0.3)+
+  geom_hline(yintercept = 0,color="grey50")+
+	geom_hline(yintercept = c(1,2,3,4),color="grey90",size=0.5)+
+	coord_polar()+
+	scale_y_continuous(limits = c(-2,NA),breaks=c(0,1,2,3,4))+
+	scale_x_continuous(limits=c(0,24),breaks=seq(0,24,3))+
+	xlab("ROI G-cosinor Acrophase")+
+	ylab(expression(log[10](p[G])))+
+	# Making WM-MD larger since fewer ROIs
+  # unused
+	geom_point(aes(size=1/n,fill=q_gcos_cos<0.05),alpha=0.7,
+      shape=21, stroke=0,  
+      color="transparent"
+    )+
+	scale_size_continuous(range = c(1,1),guide='none')+
+  theme(panel.border=element_blank())+
+	theme(panel.grid=element_blank())+
+	geom_point(data=figS3dSD2 |> 
+	             	mutate(label=fct_inorder(paste0(measure," (",nsig,"/",n,")"))),  
+			   aes(acrophase,5,color=pvalue<0.05),size=1.5)+
+	geom_errorbar(data=figS3dSD2 |> 	mutate(label=fct_inorder(paste0(measure," (",nsig,"/",n,")"))),  
+			   aes(acrophase,5,xmin=acro_l,xmax=acro_u,
+			   	color=pvalue<0.05),size=1)+
+	scale_fill_manual(labels=c(bquote(q[G]*"<0.05"),
+								bquote(q[G]*">0.05")),
+								values = c("TRUE"=colors$gcos_sig,
+								  "FALSE"="black"),guide="none")+
+	scale_color_manual(labels=c(bquote(q[G]*"<0.05"),
+								bquote(q[G]*">0.05")),
+								values = c("TRUE"=colors$gcos_sig,
+								  "FALSE"="black"),guide='none')+
+  guides(color=guide_legend(title=""))+
+	facet_grid(label~.)+theme_condense()
+gcrose_p
+```
+
+
+# Brain images {.tabset}
+
+## Glasser
+
+```{r}
+library(ggsegGlasser)
+library(ggseg)
+meta <- get_glasser_spatial_meta()
+
+meta[!(meta$region %in% glasser$data$region),]
+glasser$data[!(glasser$data$region %in% meta$region),]
+full_join(ROI_Gcosinor |> filter(measure=="cbf"),
+          meta |> select(region,hemi,roi)) |>
+  filter(!is.na(qvalue) & !is.na(region)) |> pull(roi)
+
+# Source Data
+fig3bSD <- 
+  ROI_Gcosinor |>
+  # GM with any(qvalue<0.05)
+  filter(measure %in% c("cbf","gm_md","qt1")) |>
+  mutate(acro=ifelse(qvalue<0.05,acrophase,NA)) |> 
+  select(measure,roi,acro)
+write_csv(fig3bSD |> mutate(measure=int2extlab[measure]),
+          "output/source_data/Figure_3b_part1.csv")
+
+# GM-MD and GM-qT1 are reordered in post
+spatial_p <-
+  inner_join(fig3bSD,meta) |> 
+  ungroup() |>
+  ggplot(aes(fill=acro))+
+  facet_wrap(~int2extlab[measure],nrow=5)+
+  theme_condense()+
+  scale_fill_clock(rot=15,na.value="grey95")+
+  geom_brain(atlas = glasser,
+             position=position_brain(side ~ hemi),
+             color="grey",size=0.1)+
+  theme_void() 
+spatial_p
+```
+
+## Subcortical
+
+```{r}
+myaseg <- get_subcor_ggseg_atlas()
+spatial_subcort_p <- fig3bSD |>  
+	rename(label=roi) |> 
+	ungroup() |> 
+	select(label,acro,measure) |> 
+	ggplot(aes(fill=acro))+
+	theme_condense()+
+	scale_fill_clock(rot=15,na.value="grey95")+
+	facet_wrap(~int2extlab[measure],nrow=3)+
+	geom_brain(atlas = myaseg)+
+	theme_void()
+spatial_subcort_p
+```
+
+## ICBM (WM-MD)
+
+To be added manually to final figure
+
+```{r}
+library(ggsegICBM)
+library(plotly)
+library(ggseg3d)
+meta <- get_icbm_spatial_meta()
+pdf <- ROI_Gcosinor |> filter(measure=="md") 
+
+# Source Data
+fig3bSD2 <- 
+  pdf |> 
+  mutate(acro=ifelse(qvalue<0.05,acrophase,NA)) |> 
+  select(measure,roi,acro)
+write_csv(fig3bSD2 |> mutate(measure=int2extlab[measure]),
+          "output/source_data/Figure_3b_part2.csv")
+
+pdf2 <- inner_join(fig3bSD2,meta) |> icbm_preprocess()
+pdf2$region %in% icbm_3d$ggseg_3d[[1]]$region
+
+rot=15
+pal <- 1:24
+names(pal) <- rainbow(24)[((1:24)-1+rot)%%24+1]
+
+
+p3d <- 	
+  pdf2 |> 
+  select(measure,acro,roi,region) |> 
+	ggseg3d(atlas = icbm_3d,colour="acro",
+			palette = pal,na.alpha = 0.01) |> 
+	add_glassbrain(opacity=0.05) |>
+	pan_camera("right lateral") |>
+	remove_axes()
+p3d
+
+pdf2 |> 	
+	select(region,acro,roi) |> 
+	ggseg3d(atlas = icbm_3d,colour="acro",
+			palette = pal,na.alpha = 0.01) |> 
+	add_glassbrain(opacity=0.05) |>
+	pan_camera("left lateral") |>
+	remove_axes()
+```
+
+## Color legend
+
+```{r}
+circcols_p <-
+	predat |> 
+	ggplot()+
+	geom_rect(xmin=-1,xmax=25,ymin=-1,ymax=0,fill="white",color=NA)+
+	coord_polar()+
+	scale_y_continuous(limits = c(-1,NA))+
+	scale_x_continuous(limits=c(0,24),breaks=seq(0,24,3))+
+	xlab("ROI Population-Mean Acrophase")+
+	ylab("")+
+	theme_minimal()+theme_condense()+
+	theme(
+		panel.grid.minor.x = element_blank(),
+		  panel.grid.minor.y = element_blank(),
+		  panel.grid.major.y = element_blank(),
+		  panel.grid.major.x = element_blank()
+		)+
+	theme(axis.text.x = element_text(size=6),
+		  axis.text.y = element_blank())+
+	geom_tile(data=data.frame(ymax=rep(2,200),
+							  x=c(seq(0,24,length.out=200))),
+			  aes(x,y=ymax, fill = x),
+			  color=NA,alpha=0.9) +
+	scale_fill_clock(rot=15,guide="none")
+circcols_p
+```
+
+# Figure 3 {.tabset}
+
+## Figure 3
+
+```{r figure_3, fig.height=12,fig.width=10, dev=c("png","pdf")}
+theme_condense <- function(){
+	list(
+		theme(strip.background = element_rect(color='white',fill='white')),
+		theme(strip.text = element_text(size=6,color="black",
+										margin = margin( b = 0, t = 0) ) ),
+		theme(axis.text = element_text(size=6))
+		)
+}
+
+library(patchwork)
+library(ggpubr)
+f3a_sub_act_ss +ggtitle("a")+theme(strip.text = element_blank())+
+	#
+	rhosum_ss_p+theme_minimal()+theme_condense()+theme(axis.text.x = element_text())+theme(strip.text = element_blank())+
+	geom_hline(yintercept = c(0,1),color="grey80")+
+	theme(axis.text.y = element_blank())+
+	#
+	spatial_p + theme(legend.position = "none")+ggtitle("b")+theme(strip.text = element_blank())+
+	#
+	gcrose_ss_p + theme(legend.position = 'none')+theme_condense()+ ggtitle("c")+
+	theme(axis.text.y = element_text(size=6))+theme(strip.text = element_text(size=14,color="black"))+
+	#
+	as_ggplot(get_legend(gcrose_ss_p))+
+	circcols_p+
+	# annotate("text",0,-0.7,label="Population-Mean Acrophase")+
+	#patchwork
+	plot_layout(design = "
+				AAABCCCCCDDDD
+				AAABCCCCCDDDD
+				AAABCCCCCDDDD
+				AAABEEEEEDDDD
+				####FFFFF####
+				")+
+	# plot_annotation(tag_levels = 'a')+
+	plot_layout(guides = 'collect')
+```
+
+## Figure S2 (Rest of 3)
+
+```{r figure_rest_of_3, dev=c("png","pdf"), fig.width=8,fig.height=10}
+library(patchwork)
+f3a_sub_act + theme_condense()+
+  rhosum_p +theme_condense()+
+  theme(axis.text.y = element_text(size=6))+
+  p_roiact +  theme_condense()+
+	gcrose_p + theme_condense()+
+	#patchwork
+	plot_layout(design = "AABBCCDD")+
+	plot_annotation(tag_levels = 'a')+
+	plot_layout(guides = 'collect')
+```
+
+

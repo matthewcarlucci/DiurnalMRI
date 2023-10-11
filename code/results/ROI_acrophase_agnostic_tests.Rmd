@@ -1,0 +1,29 @@
+---
+title: "ROI-wise acrophase agnostic test of rhythmicity in controls"
+---
+
+```{r}
+source("code/setup.R")
+ROI_Scosinor <- read_rds("output/ROI_S-cosinor.rds") |> unnest(bsc)
+```
+
+```{r}
+ROI_AA <- 
+  ROI_Scosinor |>
+  select(measure, roi, p = pvalue) |>
+  group_by(measure, roi) |>
+  summarize(res = list(metap::sumlog(p))) |>
+  mutate(p = map_dbl(res, `$`, "p")) |>
+  mutate(chisq = map_dbl(res, `$`, "chisq")) |>
+  select(-res) |>
+  group_by(measure) |>
+  mutate(q = p.adjust(p, method = "fdr"))
+ROI_AA
+
+ROI_AA |>
+  rename(grp = measure, pvalue = p) |>
+  groupWiseSummaryPvalTable()
+
+ROI_AA |> write_rds("output/ROI_AA.rds")
+```
+

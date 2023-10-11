@@ -1,0 +1,491 @@
+---
+title: Figure 2
+---
+
+[Skip to the final figure](#figure-2)
+
+Currently in post only:
+Bottom legend
+Equals in panel titles (cannot use with facet_wrap label_parsed)
+
+# Data Preparation
+
+Importing the whole brain cosinor statistics and merging into one table.
+
+```{r setup}
+# Child usage must import this data and libraries
+source("code/setup.R")
+
+meandf <- read_csv("data/available_upon_request/whole_brain_data.csv") |> filter(dx == 0)
+WB_Scosinor <- read_rds("output/WB_S-cosinor.rds")
+WB_Gcosinor <- read_rds("output/WB_G-cosinor.rds")
+WB_AA <- read_rds("output/WB_AA.rds")
+
+# Body weight results
+weight_Scosinor <- read_rds("output/body_weight/weight_S-cosinor_dx0.rds")
+weight_Gcosinor <- read_rds("output/body_weight/weight_G-cosinor_dx0.rds")
+weight_AA <- read_rds("output/body_weight/weight_AA_dx0.rds")
+weights <-
+  read_csv("data/available_upon_request/weights_kg.csv") |>
+  filter(dx == 0) |>
+  mutate(ltime = ifelse(session_is_day2(session, time), time + 24, time))
+```
+
+# Figure 2a: Raw data
+
+```{r fig.width=4,fig.height=4}
+meandf <-
+  meandf |>
+  mutate(measure = factor(measure, levels = fig1_modord)) |>
+  arrange(measure)
+
+wb_raw_data_mainfig_gg <- function(meandf,
+                                   WB_Scosinor,
+                                   fig1_modord) {
+  labmap <-
+    meandf |> select(measure) |> unique() |> 
+    ungroup() |>
+    arrange(match(measure, fig1_modord)) |>
+    mutate(label = factor(measure,
+      ordered = T, levels = fig1_modord,
+      labels = int2extlab[measure]
+    )) |>
+    select(measure, label) |>
+    unique()
+
+
+  meandf |>
+    inner_join(WB_Scosinor) |>
+    mutate(fitted = cosinor_pred(ltime, amplitude, acrophase, mesor)) |>
+    inner_join(labmap) |>
+    ggplot(aes(ltime, value, group = subject)) +
+    guides(linetype = guide_legend(expression(p[S]))) +
+    night_rect() +
+    geom_segment(aes(xend = ltime, yend = fitted), color = "grey") +
+    geom_point(size = 0.2, color = colors$raw_data) +
+    geom_smooth(
+      linewidth = 0.4, method = "lm", formula = y ~ sinpi(x / 12) + cospi(x / 12),
+      color = colors$ssc, se = F
+    ) +
+    facet_grid(label ~ subject,
+      scales = "free",
+      labeller = label_parsed
+    ) +
+    theme(strip.text.y = element_text(angle = -90)) +
+    theme(panel.spacing.x = unit(0, "lines")) +
+    theme(panel.spacing.y = unit(0, "lines")) +
+    theme(axis.text.x = element_text(size = 6)) +
+    theme(
+      panel.grid.minor.x = element_blank(),
+      panel.grid.major.y = element_line(color = "grey60", size = 0.3),
+      panel.grid.major.x = element_blank(),
+      panel.grid.minor.y = element_line(color = "black", size = 0.5),
+      panel.border = element_rect(color = NA),
+      plot.title = element_text(size = 6, hjust = 0.5)
+    ) +
+    ggtitle("subject") +
+    xlab("Time of Day (hr)") +
+    geom_vline(xintercept = 8, color = "grey90") +
+    scale_y_continuous(
+      breaks = function(x) c(x[1] + diff(x) * 0.3, x[2] - diff(x) * 0.3),
+      labels = my_val_formatter,
+      minor_breaks = function(x) x
+    ) +
+    scale_x_continuous(
+      breaks = c(8, 16, 24),
+      labels = c(8, "", 24),
+      limits = c(8, 36)
+    ) +
+    coord_cartesian(xlim = c(8, 32)) +
+    theme_condense()
+}
+f2a <- wb_raw_data_mainfig_gg(meandf, WB_Scosinor, fig1_modord)
+f2a
+```
+
+# Figure 2b: Polar plot
+
+Distribution of acrophase estimates from 16 individuals with acrophases estimated on n=9 scans. G-cosinor result overlaid with 95% CI.
+
+```{r mri-polar-p, fig.width=4.5,fig.height=4}
+# Impure function (fig1_modord)
+wb_polar_mainfig_gg <- function(WB_Scosinor, WB_AA, WB_Gcosinor, fig1_modord) {
+  labmap <-
+    WB_AA |>
+    inner_join(WB_Gcosinor |> ungroup()) |>
+    ungroup() |>
+    arrange(match(measure, fig1_modord)) |>
+    mutate(label = factor(measure,
+      ordered = T, levels = fig1_modord[fig1_modord %in% measure],
+      labels = paste0(
+        int2extlab[measure],
+        ifelse(p < 0.05, "^`*`", ""), " - p[G] -",
+        my_val_formatter(pvalue)
+      )
+    )) |>
+    select(measure, label) |>
+    unique()
+
+  # For CI plotting
+  # Expand CI into two segments when crossing 24:00
+  thispcr <- WB_Gcosinor
+  if (WB_Gcosinor$acro_u[1] > 24) {
+    if (WB_Gcosinorpcr$acrophase > 24) thispcr$acrophase <- WB_Gcosinor$acrophase %% 24
+    tmp <- rbind(thispcr, thispcr)
+    tmp$acro_u[1] <- 24
+    tmp$acro_l[2] <- 0
+    tmp$acro_u[2] <- tmp$acro_u[2] %% 24
+    thispcr <- tmp
+  }
+  if (WB_Gcosinor$acro_l[1] < 0) {
+    if (WB_Gcosinor$acrophase > 24) thispcr$acrophase <- WB_Gcosinor$acrophase %% 24
+    tmp <- rbind(thispcr, thispcr)
+    tmp$acro_l[1] <- tmp$acro_l[1] %% 24
+    tmp$acro_u[1] <- 24
+    tmp$acro_l[2] <- 0
+    tmp$acro_u[2] <- tmp$acro_u[2] %% 24
+    thispcr <- tmp
+  }
+
+  WB_Scosinor |>
+    inner_join(labmap) |>
+    ggplot(aes(acrophase, 1 - pvalue)) +
+    # Build plot area
+    night_rect_early() +
+    annotate(geom = "rect", xmin = 0, xmax = 24, ymin = 0, ymax = 1, alpha = 1, color = NA, fill = "whitesmoke") +
+    annotate(geom = "rect", xmin = 0, xmax = 24, ymin = -Inf, ymax = 0, fill = "white") +
+    annotate(
+      geom = "segment", x = seq(0, 24, 3), y = 1.8, yend = 0, xend = seq(0, 24, 3),
+      color = "grey", size = 0.3
+    ) +
+    scale_y_continuous(breaks = c(0, 1), limits = c(-0.5, 1.8)) +
+    geom_hline(yintercept = 1, color = "black", size = 0.2) +
+    geom_hline(yintercept = 0.5, color = "black", size = 0.2, linetype = 3) +
+    geom_segment(aes(xend = acrophase, yend = 0), color = colors$ssc, alpha = 0.3) +
+    # Colors$scc not accurate for some reason...
+    geom_point(
+      shape = 21, stroke = 0, fill = "darkorange4", alpha = 0.8,
+      color = "transparent", size = 1.2
+    ) +
+    # G-cosinor
+    geom_point(
+      data = thispcr |> filter(pvalue < 0.05) |> inner_join(labmap),
+      aes(acrophase, 1.4, color = ifelse(pvalue < 0.05, "p[G]<0.05", "p[G]>0.05")), size = 1.2
+    ) +
+    geom_errorbar(
+      data = thispcr |> filter(pvalue < 0.05) |> inner_join(labmap),
+      aes(
+        xmin = acro_u, xmax = acro_l, y = 1.4,
+        color = ifelse(pvalue < 0.05, "p[G]<0.05", "p[G]>0.05")
+      ), width = 0.5
+    ) +
+    facet_wrap(label ~ ., nrow = 3, labeller = label_parsed) +
+    theme(
+      panel.border = element_blank(),
+      panel.background = element_blank(),
+      panel.grid = element_blank(),
+      panel.spacing.x = unit(0, "line")
+    ) +
+    coord_polar() +
+    theme(
+      panel.grid.minor.x = element_blank(),
+      panel.grid.minor.y = element_blank(),
+      panel.grid.major.x = element_blank()
+    ) +
+    xlab("Acrophase (hr)") +
+    ylab(expression(1 - p[S])) +
+    scale_color_manual(
+      labels = c(
+        bquote(p[G] * ">0.05"),
+        bquote(p[G] * "<0.05")
+      ),
+      values = c("p[G]>0.05" = "white", "p[G]<0.05" = colors$gcos_sig)
+    ) +
+    guides(color = guide_legend("")) +
+    scale_x_continuous(limits = c(0, 24), breaks = seq(0, 24, 6)) +
+    guides(size = guide_legend(expression(-log10(p[S])))) +
+    theme(panel.spacing = unit(0, "lines")) +
+    theme(
+      panel.border = element_blank(),
+      panel.background = element_blank(),
+      # Legend
+      legend.title.align = 0,
+      legend.position = "right",
+      legend.title = element_text(size = 8, vjust = 0, hjust = -3),
+      panel.spacing.x = unit(1, "line"),
+      panel.grid = element_blank()
+    ) +
+    theme_condense()
+}
+
+# (Partial) Source Data
+fig2bSD <- 
+  WB_Gcosinor |> 
+  select(measure,pvalue,acrophase,acro_l,acro_u)
+write_csv(fig2bSD |> mutate(measure=int2extlab[measure]),
+          "output/source_data/Figure_2b_partial.csv")
+
+f2b <- wb_polar_mainfig_gg(WB_Scosinor, WB_AA, fig2bSD, fig1_modord)
+f2b
+```
+
+# Figure 2c: Unnormalized G-cosinor overlay
+
+An additional illustration of the amplitude compared to interindividual variation
+
+```{r fig.height=4,fig.width=4}
+# library(ggpubr) TODO: what's it for?
+wb_unnorm_gcos <- function(WB_Gcosinor, meandf, fig1_modord) {
+  # Create label for each metric
+  labmap <-
+    WB_Gcosinor |>
+    ungroup() |>
+    arrange(match(measure, fig1_modord)) |>
+    mutate(label = factor(measure,
+      ordered = T, levels = fig1_modord,
+      labels = paste0(
+        int2extlab[measure], "-R[UN]^2-",
+        my_val_formatter(rsq, doparse = FALSE)
+      )
+    )) |>
+    select(measure, label) |>
+    unique()
+
+  # Getting data for gcos predictions
+  gcossim <- WB_Gcosinor |>
+    select(measure, MESOR, amplitude, acrophase, pvalue) |>
+    group_by(measure) |>
+    nest() |>
+    mutate(tmp = map(data, function(x) {
+      t <- 8:34
+      data.frame(
+        value = cosinor_pred(
+          t, as.numeric(x[1, 2]),
+          as.numeric(x[1, 3]), as.numeric(x[1, 1])
+        ),
+        ltime = t, subject = "Cohort", pvalue = x$pvalue
+      )
+    })) |>
+    unnest(tmp)
+
+  meandf |>
+    inner_join(labmap) |>
+    ggplot() +
+    night_rect() +
+    geom_point(aes(ltime, value), size = 0.4, color = colors$raw_data) +
+    stat_smooth_cosinor(aes(ltime, value, group = subject), se = F, alpha = 0.5, color = colors$ssc) +
+    geom_rect(
+      data = WB_Gcosinor |> filter(pvalue < 0.05) |> inner_join(labmap),
+      aes(
+        xmin = 8, xmax = 39, x = 0, y = MESOR,
+        ymin = MESOR - amplitude, ymax = MESOR + amplitude
+      ),
+      fill = "lightblue", alpha = 0.7
+    ) +
+    geom_errorbar(
+      data = WB_Gcosinor |> filter(pvalue < 0.05) |> inner_join(labmap),
+      aes(x = 36, y = MESOR, ymin = MESOR - amplitude, ymax = MESOR + amplitude),
+      color = "blue", width = 1.75
+    ) +
+    geom_text(
+      data = WB_Gcosinor |> filter(pvalue < 0.05) |> inner_join(labmap),
+      aes(label = "2A", x = 36, y = MESOR + amplitude * 5), size = 2,
+      color = "blue"
+    ) +
+    geom_line(
+      data = gcossim |> inner_join(labmap),
+      aes(ltime, value, color = ifelse(pvalue < 0.05, "p[G]<0.05", "p[G]>0.05")), size = 0.8
+    ) +
+    scale_color_manual(
+      labels = c(
+        bquote(p[G] * ">0.05"),
+        bquote(p[G] * "<0.05")
+      ),
+      values = c("p[G]>0.05" = "black", "p[G]<0.05" = colors$gcos_sig)
+    ) +
+    guides(color = "none") +
+    facet_wrap(label ~ ., scales = "free", labeller = label_parsed) +
+    theme(panel.spacing = unit(0.1, "line")) +
+    theme(panel.grid.minor = element_blank()) +
+    xlab("Time of Day (hr)") +
+    scale_x_continuous(
+      breaks = c(8, 16, 24, 32),
+      labels = c(8, "", 24, ""),
+      limits = c(8, NA)
+    ) +
+    scale_y_continuous(labels = my_val_formatter) +
+    coord_cartesian(xlim = c(8, 36)) +
+    theme_condense()
+}
+
+# (Partial) Source Data
+fig2cSD <- 
+  WB_Gcosinor |> 
+  select(measure,pvalue,amplitude,acrophase,MESOR,rsq)
+write_csv(fig2cSD |> mutate(measure=int2extlab[measure]),
+          "output/source_data/Figure_2c_partial.csv")
+
+ampoverlay_p <- wb_unnorm_gcos(fig2cSD, meandf, fig1_modord)
+ampoverlay_p
+```
+
+# Figure 2d: De-meaned G-cosinor {.tabset}
+
+```{r fig.height=4,fig.width=4}
+wb_norm_gcos <- function(WB_Gcosinor, meandf, fig1_modord) {
+  labmap <-
+    WB_Gcosinor |>
+    ungroup() |>
+    arrange(match(measure, fig1_modord)) |>
+    mutate(label = factor(measure,
+      ordered = T, levels = fig1_modord,
+      labels = paste0(
+        int2extlab[measure], " - R[DM]^2 :",
+        my_val_formatter(rsqdm)
+      )
+    )) |>
+    select(measure, label) |>
+    unique()
+
+  gcos_preds <- WB_Gcosinor |>
+    mutate(fitted = list(data.frame(
+      t = 8:34,
+      y_pred = cosinor_pred(8:34, amplitude, acrophase)
+    ))) |>
+    unnest(fitted) |>
+    inner_join(labmap)
+
+  meandf |>
+    group_by(measure, subject) |>
+    mutate(value = scale(value, scale = FALSE)) |>
+    inner_join(labmap) |>
+    ggplot(aes(ltime, value, group = NA)) +
+    night_rect() +
+    geom_point(size = 0.3, color = colors$raw_data) +
+    xlab("Time of Day (hr)") +
+    ylab("Demeaned values") +
+    scale_x_continuous(
+      breaks = c(8, 16, 24, 32),
+      labels = c(8, "", 24, ""),
+      limits = c(8, 34)
+    ) +
+    scale_y_continuous(labels = my_val_formatter) +
+    stat_smooth_cosinor(aes(group = subject), se = F, alpha = 0.5, color = colors$ssc) +
+    geom_line(data = gcos_preds, aes(t, y_pred,
+      color = ifelse(pvalue < 0.05, "p[G]<0.05", "p[G]>0.05")
+    ), size = 1) +
+    scale_color_manual(
+      labels = c(
+        bquote(p[G] * ">0.05"),
+        bquote(p[G] * "<0.05")
+      ),
+      values = c("p[G]>0.05" = "black", "p[G]<0.05" = colors$gcos_sig)
+    ) +
+    guides(color = "none") +
+    theme(panel.spacing = unit(0, "line")) +
+    facet_wrap(nrow = 4, label ~ ., scales = "free", labeller = label_parsed) +
+    theme_condense()
+}
+
+# (Partial) Source Data
+fig2dSD <- 
+  WB_Gcosinor |> 
+  select(measure,pvalue,amplitude,acrophase,MESOR,rsqdm)
+write_csv(fig2dSD |> mutate(measure=int2extlab[measure]),
+          "output/source_data/Figure_2d_partial.csv")
+
+Gcos_ondata_p <- wb_norm_gcos(fig2dSD, meandf, fig1_modord)
+Gcos_ondata_p
+```
+
+# Weights
+
+Reuse MRI metrics/code for weight
+
+## Raw data
+
+```{r fig.height=1.6, fig.width=4} 
+rawlin_p <- wb_raw_data_mainfig_gg(
+  weights |> mutate(measure = "weight", value = weight),
+  weight_Scosinor, "weight"
+)
+rawlin_p
+```
+
+## Polar Acrophases
+
+```{r fig.width=4,fig.height=1.4}
+polar_weights_p <- wb_polar_mainfig_gg(
+  weight_Scosinor |> mutate(measure = "weight"),
+  weight_AA,
+  weight_Gcosinor |> mutate(measure = "weight"),
+  "weight"
+)
+polar_weights_p
+```
+
+## Un-normalized S/G cosinor fits
+
+```{r fig.height=1.4,fig.width=1.4}
+Gcos_un_weights_p <- wb_unnorm_gcos(
+  weight_Gcosinor |> mutate(measure = "weight"),
+  weights |> mutate(measure = "weight", value = weight),
+  "weight"
+)
+Gcos_un_weights_p
+```
+
+## De-meaned S/G cosinor 
+
+```{r fig.width=1.4,fig.height=1.4}
+Gcos_weights_p <- wb_norm_gcos(
+  weight_Gcosinor |> mutate(measure = "weight"),
+  weights |> mutate(measure = "weight", value = weight),
+  "weight"
+)
+Gcos_weights_p
+```
+
+# Figures {.tabset}
+
+## Figure 2 {#figure-2}
+
+```{r figure_2,fig.height=10,fig.width=8.3, dev=c("png","pdf")}
+f2a +
+  #-next
+  f2b + guides(color = "none") +
+  #-next
+  ampoverlay_p + guides(color = "none") +
+  #-next
+  Gcos_ondata_p + guides(color = "none") +
+  #-patchwork
+  plot_layout(design = "AAABBB
+				          AAABBB
+				          AAABBB
+				          AAABBB
+				          AAABBB
+				          CCCDDD
+				          CCCDDD
+				          CCCDDD
+				          CCCDDD
+				          ") +
+  plot_annotation(tag_levels = "a") +
+  plot_layout(guides = "collect") & theme_condense()
+```
+
+## Figure Sbody-weight
+
+```{r fig.height=3}
+  #-next
+  rawlin_p + ylab("Body weight (kg)") +
+  #-next
+  polar_weights_p + guides(color = "none") +
+  #-next
+  Gcos_un_weights_p + ylab("Body weight (kg)") +
+  #-next
+  Gcos_weights_p+
+  plot_layout(design = "AAAABCD") +
+  plot_annotation(tag_levels = "a") +
+  plot_layout(guides = "collect") & theme_condense()
+```
+

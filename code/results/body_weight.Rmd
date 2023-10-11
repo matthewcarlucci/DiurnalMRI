@@ -1,0 +1,112 @@
+---
+title: "Tests on diurnal body weight"
+---
+
+```{r}
+source("code/setup.R")
+library(flextable)
+knitr::opts_chunk$set(fig.width = 8, fig.height = 4)
+
+# Since multioutput, making dir
+dir.create("output/body_weight",showWarnings = F)
+```
+
+# Cosinor on Weights
+
+Running cosinor methods on weights. 
+
+## Controls 
+
+```{r}
+weights <-
+  read_csv("data/available_upon_request/weights_kg.csv") |>
+  filter(dx == 0)
+```
+
+```{r}
+weight_Scosinor <-
+  weights |>
+  mutate(time = ltime, value = weight) |>
+  group_by(subject) |>
+  do(cosinor = discoCosinor(t(matrix(.$value)), .$ltime))
+write_rds(
+  weight_Scosinor |> unnest(cosinor),
+  "output/body_weight/weight_S-cosinor_dx0.rds"
+)
+
+aa <- 
+  weight_Scosinor |>
+  unnest(cosinor) |>
+  pull(pvalue) |>
+  metap::sumlog()
+write_rds(data.frame(measure = "weight", "p" = aa$p, "chisq" = aa$chisq, dx = 0), "output/body_weight/weight_AA_dx0.rds")
+
+pcr <-
+  discoPMcos(weight_Scosinor$cosinor) |>
+  mutate(measure = "weight", roi = "body") |>
+  rsqGcos(weights |> mutate(value = weight, measure = "weight", roi = "body"))
+write_rds(pcr, "output/body_weight/weight_G-cosinor_dx0.rds")
+pcr
+```
+
+## BPD 
+
+```{r}
+weights <-
+  read_csv("data/available_upon_request/weights_kg.csv") |>
+  filter(dx == 1)
+
+weight_Scosinor <-
+  weights |>
+  mutate(time = ltime, value = weight) |>
+  group_by(subject) |>
+  do(cosinor = discoCosinor(t(matrix(.$value)), .$ltime))
+write_rds(
+  weight_Scosinor |> unnest(cosinor),
+  "output/body_weight/weight_S-cosinor_dx1.rds"
+)
+
+aa <- weight_Scosinor |>
+  unnest(cosinor) |>
+  pull(pvalue) |>
+  metap::sumlog()
+write_rds(data.frame(measure = "weight", "p" = aa$p, "chisq" = aa$chisq, dx = 1), "output/body_weight/weight_AA_dx1.rds")
+
+pcr <-
+  discoPMcos(weight_Scosinor$cosinor) |>
+  mutate(measure = "weight", roi = "body") |>
+  rsqGcos(weights |> mutate(value = weight, measure = "weight", roi = "body"))
+write_rds(pcr, "output/body_weight/weight_G-cosinor_dx1.rds")
+pcr
+```
+
+## Combined analysis
+
+```{r}
+weights <- read_csv("data/available_upon_request/weights_kg.csv")
+
+weight_Scosinor <-
+  weights |>
+  mutate(time = ltime, value = weight) |>
+  group_by(subject) |>
+  do(cosinor = discoCosinor(t(matrix(.$value)), .$ltime))
+write_rds(
+  weight_Scosinor |> unnest(cosinor),
+  "output/body_weight/weight_S-cosinor_dx01.rds"
+)
+
+aa <- 
+  weight_Scosinor |>
+  unnest(cosinor) |>
+  pull(pvalue) |>
+  metap::sumlog()
+write_rds(data.frame(measure = "weight", "p" = aa$p, "chisq" = aa$chisq), "output/body_weight/weight_AA_dx01.rds")
+
+pcr <-
+  discoPMcos(weight_Scosinor$cosinor) |>
+  mutate(measure = "weight", roi = "body") |>
+  rsqGcos(weights |> mutate(value = weight, measure = "weight", roi = "body"))
+write_rds(pcr, "output/body_weight/weight_G-cosinor_dx01.rds")
+pcr
+```
+

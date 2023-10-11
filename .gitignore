@@ -1,0 +1,33 @@
+ci-deploy-dir
+.DS_Store
+.snakemake
+report
+report*
+*.out
+# archives of scikick reports
+.sk_archive 
+
+# Papers, etc.
+resources
+
+# Rstudio creates these files sometimes
+code/*/*references.bib
+
+# Do not store R packages
+renv/library
+
+# Ignore Rmarkdown notebook preview files for now
+*.nb.html
+code/*.html
+code/*/*.html
+code/*/*.pdf
+output
+input
+
+# with some forced exceptions
+data 
+
+*.Rproj
+*.csv
+.Rproj.user
+.Rhistory

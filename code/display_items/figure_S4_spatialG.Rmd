@@ -1,0 +1,203 @@
+---
+title: "Spatial G-cosinor statistics"
+---
+
+```{r}
+source("code/setup.R")
+library(ggseg)
+
+# Source Data
+figS4SD <-
+  read_rds("output/ROI_G-cosinor.rds") |> 
+  select(measure,roi,qvalue,amplitude,rsq,rsqdm)
+write_csv(figS4SD |> mutate(measure=int2extlab[measure]),
+          "output/source_data/Figure_S4.csv")
+```
+
+# Pieces {.tabset}
+
+## Spatial
+
+Rsq 
+
+```{r}
+library(ggsegGlasser)
+meta <- get_glasser_spatial_meta()
+p11 <- inner_join(figS4SD, meta) |>
+  filter(measure %in% c("cbf", "gm_md")) |>
+  mutate(rsq = ifelse(qvalue < 0.05, rsq, NA)) |>
+  ggplot(aes(fill = rsq)) +
+  facet_wrap(~ int2extlab[measure], nrow = 1) +
+  theme_condense() +
+  scale_fill_viridis_c(na.value = "grey90", limits = c(0, 0.05)) +
+  geom_brain(
+    atlas = glasser,
+    position = position_brain(side ~ hemi), color = "grey", size = 0.1
+  ) +
+  theme_void() +
+  theme(axis.text = element_blank())
+p11
+
+myaseg <- get_subcor_ggseg_atlas()
+figS4SD |>
+  rename(label = roi) |>
+  filter(measure %in% c("cbf", "gm_md")) |>
+  mutate(rsq = ifelse(qvalue < 0.05, rsq, NA)) |>
+  ggplot(aes(fill = rsq)) +
+  facet_wrap(~ int2extlab[measure], nrow = 1) +
+  theme_condense() +
+  scale_fill_viridis_c(na.value = "grey90", limits = c(0, 0.05)) +
+  geom_brain(atlas = myaseg, color = "grey", size = 0.1) +
+  theme_void() +
+  theme(axis.text = element_blank())
+```
+
+Rsqdm
+
+```{r}
+p12 <-
+  inner_join(figS4SD, meta) |>
+  filter(measure %in% c("cbf", "gm_md", "md")) |>
+  mutate(rsqdm = ifelse(qvalue < 0.05, rsqdm, NA)) |>
+  ggplot(aes(fill = rsqdm)) +
+  facet_wrap(~ int2extlab[measure], nrow = 1) +
+  theme_condense() +
+  scale_fill_viridis_c(na.value = "grey90", limits = c(0, 0.23)) +
+  geom_brain(
+    atlas = glasser,
+    position = position_brain(side ~ hemi), color = "grey", size = 0.1
+  ) +
+  theme_void() +
+  theme(axis.text = element_blank())
+p12
+
+figS4SD |>
+  rename(label = roi) |>
+  filter(measure %in% c("cbf", "gm_md")) |>
+  mutate(rsqdm = ifelse(qvalue < 0.05, rsqdm, NA)) |>
+  ggplot(aes(fill = rsqdm)) +
+  facet_wrap(~ int2extlab[measure], nrow = 1) +
+  theme_condense() +
+  scale_fill_viridis_c(na.value = "grey90", limits = c(0, 0.23)) +
+  geom_brain(atlas = myaseg, color = "grey", size = 0.1) +
+  theme_void() +
+  theme(axis.text = element_blank())
+```
+
+Amp
+
+```{r}
+p13 <-
+  inner_join(figS4SD, meta) |>
+  filter(measure %in% c("cbf", "gm_md")) |>
+  mutate(amp = ifelse(qvalue < 0.05, amplitude, NA)) |>
+  group_by(measure) |>
+  mutate(maxnorm_amp = amp / max(amp, na.rm = T)) |>
+  ggplot(aes(fill = maxnorm_amp)) +
+  facet_wrap(~ int2extlab[measure], nrow = 1) +
+  theme_condense() +
+  scale_fill_viridis_c(na.value = "grey90", limits = c(0, 1)) +
+  geom_brain(
+    atlas = glasser,
+    position = position_brain(side ~ hemi), color = "grey", size = 0.1
+  ) +
+  theme_void() +
+  theme(axis.text = element_blank())
+p13
+
+figS4SD |>
+  rename(label = roi) |>
+  filter(measure %in% c("cbf", "gm_md")) |>
+  mutate(amp = ifelse(qvalue < 0.05, amplitude, NA)) |>
+  group_by(measure) |>
+  mutate(maxnorm_amp = amp / max(amp, na.rm = T)) |>
+  ggplot(aes(fill = maxnorm_amp)) +
+  facet_wrap(~ int2extlab[measure], nrow = 1) +
+  theme_condense() +
+  scale_fill_viridis_c(na.value = "grey90", limits = c(0, 1)) +
+  geom_brain(atlas = myaseg, color = "grey", size = 0.1) +
+  theme_void() +
+  theme(axis.text = element_blank())
+```
+
+## WM-MD
+
+```{r}
+library(ggsegICBM)
+library(plotly)
+library(ggseg3d)
+meta <- get_icbm_spatial_meta()
+pdf <- figS4SD |> filter(measure == "md")
+pdf2 <- inner_join(pdf, meta) |>
+  icbm_preprocess() |>
+  filter(qvalue < 0.05)
+```
+
+Rsq
+
+```{r}
+pal <- seq(0, 0.05, length.out = 10)
+names(pal) <- viridis::viridis(10)
+
+pdf2 |>
+  mutate(rsq = ifelse(qvalue < 0.05, rsq, NA)) |>
+  group_by(measure) |>
+  select(region, rsq, roi) |>
+  ggseg3d(
+    atlas = icbm_3d, colour = "rsq",
+    palette = pal, na.alpha = 1
+  ) |>
+  add_glassbrain(opacity = 0.05) |>
+  pan_camera("left lateral") |>
+  remove_axes()
+```
+
+Rsqdm
+
+```{r}
+pal <- seq(0, 0.23, length.out = 10)
+names(pal) <- viridis::viridis(10)
+
+pdf2 |>
+  mutate(rsqdm = ifelse(qvalue < 0.05, rsqdm, NA)) |>
+  group_by(measure) |>
+  select(region, rsqdm, roi) |>
+  ggseg3d(
+    atlas = icbm_3d, colour = "rsqdm",
+    palette = pal, na.alpha = 1
+  ) |>
+  add_glassbrain(opacity = 0.05) |>
+  pan_camera("left lateral") |>
+  remove_axes()
+```
+
+Amp
+
+```{r}
+pal <- seq(0, 1, length.out = 10)
+names(pal) <- viridis::viridis(10)
+
+pdf2 |>
+  mutate(amp = ifelse(qvalue < 0.05, amplitude, NA)) |>
+  group_by(measure) |>
+  mutate(maxnorm_amp = amp / max(amp, na.rm = T)) |>
+  select(region, maxnorm_amp, roi) |>
+  ggseg3d(
+    atlas = icbm_3d, colour = "maxnorm_amp",
+    palette = pal, na.alpha = 1
+  ) |>
+  add_glassbrain(opacity = 0.05) |>
+  pan_camera("left lateral") |>
+  remove_axes()
+```
+
+
+# Final
+
+```{r fig.height=6}
+library(patchwork)
+p11 + p12 + p13 +
+  plot_layout(design = "AD\nBE\nCF") + plot_annotation(tag_levels = "a")
+```
+
+

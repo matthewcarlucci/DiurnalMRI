@@ -1,0 +1,123 @@
+---
+title: "Control/BPD difference testing"
+---
+
+```{r}
+source("code/setup.R")
+WB_Scosinor <- rbind(
+  read_rds("output/WB_cosinor_stats_BPD/WB_S-cosinor_dx1.rds"),
+  read_rds("output/WB_S-cosinor.rds") |> mutate(dx = factor(0))
+)
+
+# dir since multioutput page
+dir.create("output/WB_BPD_diffs",showWarnings = F)
+```
+
+# G-cosinor 2 group test
+
+## Acrophase-only tests 
+
+### Differential acrophase permutation test 
+
+```{r}
+## GM-MD
+# real value
+thisWB_Scosinor <- WB_Scosinor |> filter(measure %in% "gm_md")
+a0 <- sincos2acro(mean(thisWB_Scosinor$sincoef[thisWB_Scosinor$dx==0]),
+                    mean(thisWB_Scosinor$coscoef[thisWB_Scosinor$dx==0]))
+a1 <- sincos2acro(mean(thisWB_Scosinor$sincoef[thisWB_Scosinor$dx==1]),
+                    mean(thisWB_Scosinor$coscoef[thisWB_Scosinor$dx==1]))
+dr <- circdist(a0,a1) |> abs()
+real1 <- data.frame(measure="gm_md",dr,a1,a0)
+# permutations
+pdat <- replicate(Nperm,{
+  sidx <- sample(thisWB_Scosinor$dx)
+  list(thisWB_Scosinor$sincoef[sidx==0],thisWB_Scosinor$coscoef[sidx==0],
+       thisWB_Scosinor$sincoef[sidx==1],thisWB_Scosinor$coscoef[sidx==1])
+},simplify=F)
+a0 <- sincos2acro(sapply(pdat,`[[`,1) |> colMeans(),
+            sapply(pdat,`[[`,2) |> colMeans())
+a1 <- sincos2acro(sapply(pdat,`[[`,3) |> colMeans(),
+            sapply(pdat,`[[`,4) |> colMeans())
+dr <- circdist(a0,a1) |> abs()
+perms1 <- data.frame(i=1:Nperm,measure="gm_md",dr,a1,a0)
+
+## FA
+# real value
+thisWB_Scosinor <- WB_Scosinor |> filter(measure %in% "fa")
+a0 <- sincos2acro(mean(thisWB_Scosinor$sincoef[thisWB_Scosinor$dx==0]),
+                    mean(thisWB_Scosinor$coscoef[thisWB_Scosinor$dx==0]))
+a1 <- sincos2acro(mean(thisWB_Scosinor$sincoef[thisWB_Scosinor$dx==1]),
+                    mean(thisWB_Scosinor$coscoef[thisWB_Scosinor$dx==1]))
+dr <- circdist(a0,a1) |> abs()
+real2 <- data.frame(measure="fa",dr,a1,a0)
+# permutations
+pdat <- replicate(Nperm,{
+  sidx <- sample(thisWB_Scosinor$dx)
+  list(thisWB_Scosinor$sincoef[sidx==0],thisWB_Scosinor$coscoef[sidx==0],
+       thisWB_Scosinor$sincoef[sidx==1],thisWB_Scosinor$coscoef[sidx==1])
+},simplify=F)
+a0 <- sincos2acro(sapply(pdat,`[[`,1) |> colMeans(),
+            sapply(pdat,`[[`,2) |> colMeans())
+a1 <- sincos2acro(sapply(pdat,`[[`,3) |> colMeans(),
+            sapply(pdat,`[[`,4) |> colMeans())
+dr <- circdist(a0,a1) |> abs()
+perms2 <- data.frame(i=1:Nperm,measure="fa",dr,a1,a0)
+
+real <- rbind(real1,real2)
+perms <- rbind(perms1,perms2)
+
+acrodiff_test <-
+  perms |>
+  inner_join(real, by = "measure") |>
+  group_by(measure) |>
+  summarize(p = mean(dr.y <= dr.x), real_diff = dr.y[1])
+acrodiff_test
+write_rds(acrodiff_test, "output/WB_BPD_diffs/WB_acrodiff_test.rds")
+```
+
+# CBF follow-up analysis
+
+### Differential acrophase variance test 
+
+#### Permutations
+
+```{r fig.width=6,fig.height=6}
+# Real value
+tmp <- WB_Scosinor |> filter(measure == "cbf")
+r1=tmp$acrophase[tmp$dx==1] |> acro2complex() |> mean() |> abs()
+r0=tmp$acrophase[tmp$dx==0] |> acro2complex() |> mean() |> abs()
+dr=r0-r1
+real <- data.frame(measure="cbf",r1,r0,dr)
+
+# Permutations
+pdat <- replicate(Nperm,
+  {
+    sidx=sample(tmp$dx)
+    list(tmp$acrophase[sidx==1] |> acro2complex(), 
+         tmp$acrophase[sidx==0] |> acro2complex())
+  },simplify = F) 
+    
+r1=sapply(pdat,`[[`,1) |>  colMeans() |> abs()
+r0=sapply(pdat,`[[`,2) |>  colMeans() |> abs()
+dr=r0-r1
+perms <- data.frame(measure="cbf",r1,r0,dr)
+
+acrodiffvar_test <-
+  perms |>
+  inner_join(real, by = "measure") |>
+  group_by(measure) |>
+  summarize(p = mean(dr.y <= dr.x), real_diff = dr.y[1])
+acrodiffvar_test
+write_rds(acrodiffvar_test, "output/WB_BPD_diffs/WB_acrodiffvar_test.rds")
+```
+
+## Differential fit strength
+
+```{r}
+WB_Scosinor |> 
+  ungroup() |>
+  filter(measure == "cbf") |> 
+  rstatix::t_test(Rsq ~ dx)
+```
+

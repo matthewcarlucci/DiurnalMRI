@@ -1,0 +1,51 @@
+---
+title: Technical Variation Table
+---
+
+```{r}
+source("code/setup.R")
+df <- read_csv("data/available_upon_request/whole_brain_techvar_data.csv")
+```
+
+ANOVA on each subject-metric
+
+```{r}
+aovres <- df |>
+  group_by(measure, subject) |>
+  nest() |>
+  mutate(res = map(data, function(x) {
+    aov(value ~ session, x) |>
+      tidy() |>
+      slice(1)
+  })) |>
+  unnest(res)
+aovres
+```
+
+# Table
+
+```{r}
+library(flextable)
+aovres |>
+  ungroup() |>
+  select(-data, -term, -df) |>
+  rename(F_8_18 = statistic) |>
+  mutate(measure = int2extlab[measure]) |>
+  arrange(measure) |>
+  select(Metric = measure, subject, everything()) |>
+  flextable() |>
+  set_formatter_type() |>
+  set_formatter(
+    p.value = function(x) my_val_formatter(x, mf = F),
+    meansq = function(x) my_val_formatter(x, mf = F),
+    sumsq = function(x) my_val_formatter(x, mf = F),
+    statistic = function(x) my_val_formatter(x, mf = F)
+  ) |>
+  autofit()
+
+# Ranges used in main text
+aovres$p.value |> range()
+aovres$statistic |> range()
+```
+
+

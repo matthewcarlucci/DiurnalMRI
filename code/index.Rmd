@@ -1,0 +1,9 @@
+---
+title: DiurnalMRI data analysis archive
+---
+
+```{r}
+htmltools::includeMarkdown("README.md")
+```
+
+

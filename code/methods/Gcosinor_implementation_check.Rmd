@@ -1,0 +1,66 @@
+---
+title: "G-cosinor equivalence check"
+---
+
+Here, it is tested whether the vectorized discoPMcos matches a previous
+population-mean cosinor implementation (R package cosinor2).
+
+```{r}
+library(DiscoRhythm)
+library(SummarizedExperiment)
+source("R/cosinor.R")
+library(dplyr)
+
+# Generating an experiment on 20 subjects
+# Treating simulated techreps as biological here for convenience and demonstration
+seL <- replicate(20,{
+  se <- discoGetSimu(as_se=T)
+  # Add noise for each subject
+  assay(se) <- assay(se) + rnorm(length(assay(se)))
+  se
+},simplify=F)
+
+cosinorL <- lapply(seL, \(x) discoODAs(x,method="CS")$CS)
+
+pmc <- discoPMcos(cosinorL) |> head(100)
+pmc$measure = rownames(seL[[1]])[1:100]
+rownames(pmc) <- NULL
+
+# Test for equality with cosinor2
+library(cosinor2)
+cs2pmc <- lapply(1:100,\(i){
+  res <- cosinor2::population.cosinor.lm(
+    data = seL |> sapply(\(x) assay(x)[i,]) |> t(),
+    seL[[1]]$Time, period = 24,plot = F)
+  
+  tmp <- c(res$conf.ints[1,],res$conf.ints[2,])
+  names(tmp) <- paste0(names(tmp),"_",rep(c("u","l"),each=3))
+  
+  data.frame(measure=rownames(seL[[1]])[i],
+             data.frame(res$coefficients),
+             cosinor.detect(res),
+             data.frame(as.list(tmp)))
+}) |> data.table::rbindlist()
+
+# Reformatting results from cosinor2 for population.cosinor.lm
+acr_converter <- function(x,per=24,isci=FALSE){
+  ((-x/(2*pi)*per)%%per)
+}
+
+
+pmres <- cs2pmc |> 
+  rename(amp_l=Amplitude_l) |> 
+  rename(amp_u=Amplitude_u) |>  
+  rename(amplitude=Amplitude) |>  
+  rename(pvalue=p) |>  
+  mutate(acrophase=acr_converter(Acrophase)) |>  
+  mutate(acro_u=acr_converter(Acrophase_l)) |>  
+  mutate(acro_l=acr_converter(Acrophase_u)) |>  
+  select(-Acrophase,-Acrophase_l,-Acrophase_u)
+
+# check if results are the same
+df1 = pmres %>% select(measure,acrophase,pvalue,MESOR:last_col()) %>% ungroup() |> data.frame()
+df2 = pmc |> mutate(acro_l=acro_l%%24,acro_u=acro_u%%24)
+stopifnot(colnames(df1) %in% colnames(df2))
+stopifnot(all.equal(df1,df2[colnames(df1)]))
+```

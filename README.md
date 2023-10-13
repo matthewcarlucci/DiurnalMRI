@@ -1,10 +1,10 @@
 # Overview
 
-Source code for “Diurnal oscillations of MRI metrics in the brains of male participants”. Applies the “Data Analysis and Statistical Methods” steps to the processed MRI data to produce results and figures. 
+Source code for “Diurnal oscillations of MRI metrics in the brains of male participants”. Applies the “Data Analysis and Statistical Methods” steps to the processed MRI data to produce results and figures. The executed notebooks are contained in `docs/` and the latest version of this can be viewed online [here](https://matthewcarlucci.github.io/DiurnalMRI).
 
 # Statistical code demonstration
 
-The main data analysis procedures are implemented in `R/cosinor.R`. Methods are demonstrated in a "methods walkthrough" notebook (seen TODO:here) with a minimal execution of the methods using simulated datasets. All code can be executed on standard hardware. Installation of the required software would take approximately 5-30 minutes. The software was tested on macOS 12.4 and Windows 11. 
+The main data analysis procedures are implemented in `R/cosinor.R`. Methods are demonstrated in a notebook (`code/methods/methods_walkthrough.Rmd`) with simple examples on simulated datasets. All code can be executed on standard hardware. Installation of the required software would take approximately 5-30 minutes. The software was tested on macOS 12.4 and Windows 11. 
 
 The dependencies for running these methods can be installed in R >4.1.3 by:
 
@@ -19,27 +19,17 @@ remotes::install_github("matthewcarlucci/DiurnalMRI")
 
 As indicated in the article, processed MRI data are available upon request. 
 
-TODO: add further details e.g. data availability statement
+>All processed data generated in this study are available as a dataset on the Zenodo platform (https://doi.org/10.5281/zenodo.8360149). This dataset contains subject-level: processed whole brain and ROI MRI data, body-weight data, and processed actigraphy data. Anonymized subject level data are available to other investigators under restricted access in compliance with institutional ethics and privacy policies. Access requests can be submitted via Zenodo. The raw MRI data are protected and are not available due to institutional ethics and privacy restrictions. Source Data are provided with this paper where privacy and consent restrictions allow.
 
-## Using data with the code in this repository
-
-The data are expected (by the first steps in `code/`) to be found within the following directories.
-
-- `data/available_upon_request/` - **Not contained in this repository**. This restricted access anonymized subject-level data may be provided upon request.
-- `data/private/` - **Not contained in this repository**. Cannot be shared due to privacy concerns.
-- `data/reference_files/` - Contained within this repository.
-
-The contents are further described in `data/`.
+This Zenodo dataset is expected (by the first steps in `code/`) to be found within the currently empty `data/available_upon_request/` directory. Available data are further described in `data/`.
 
 # Analysis archive
 
-The notebooks found within the `code/` directory take the `data/` and produce the results presented in the article. Divided into:
+The notebooks found within the `code/` directory read in the `data/` and produce the results presented in the article. They are divided into:
 
 - `code/results/` - Obtaining statistics derived from whole brain, ROI, and body-weight data.
-- `code/display_items/` - Figures are generated here.
+- `code/display_items/` - Figures and tables are generated here.
 - `code/methods/` - Demonstrations of methods and methods code.
-
-A website of these already computed notebook results can be found TODO:here.
 
 ## Installing all R packages
 
@@ -89,11 +79,11 @@ code/methods/Gcosinor_implementation_check.R
 
 The computations take approximately 30 minutes. No individual page should take more than 2 minutes.
 
-Note: The `data/private/` for `table_1.Rmd` and `figure_S6_phasePSQI.Rmd` are not available and therefore have been modified to exit without error when the data is not available.
+Note: The `data/private/` for `table_1.Rmd` and `figure_S6_phasePSQI.Rmd` are not available and therefore have been modified to exit without error when the data are not found.
 
 ### Automated archive build
 
-The configured order of execution can be automated and archived with [scikick](https://github.com/matthewcarlucci/scikick) (`sk run`). `report/out_html/index.html` can then be opened in any web browser to go to the homepage.
+The configured order of execution can be automated and archived with [scikick](https://github.com/matthewcarlucci/scikick) (`sk run`) to produce the website found within `docs/`.
 
 # Glossary
 
